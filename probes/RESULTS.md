@@ -132,9 +132,8 @@ object per colour region inside a wrapper object, with
 - Whether the GUI import path behaves like the CLI (expected yes; same loader).
 - Whether Bambu's GUI colour-parsing dialog picks up `m:colorgroup` in files
   that have no `model_settings.config`.
-- Extruder numbers above the printer's extruder count — needs a check that
-  PrusaSlicer clamps rather than errors when a scene yields more colour regions
-  than tools.
+- ~~Extruder numbers above the printer's extruder count~~ — answered by probe I
+  below: they silently collapse onto filament 1.
 
 ## Reproducing
 
