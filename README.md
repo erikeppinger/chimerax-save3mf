@@ -10,7 +10,6 @@ save molecule.3mf size 80
 
 Status: **phase 2 complete** — geometry and colour parts both work, verified
 end to end in PrusaSlicer, Bambu Studio and OrcaSlicer.
-phase 2.
 
 ## Install
 
@@ -85,9 +84,16 @@ Use ChimeraX's bundled interpreter as above.
 ## Slicer notes
 
 PrusaSlicer, Bambu Studio and OrcaSlicer disagree about how multi-part colour
-information is carried in 3MF, and no single file satisfies all of them. See
-[probes/RESULTS.md](probes/RESULTS.md) — the exporter will grow a `flavor`
-option, which is what `flavor` selects.
+information is carried in 3MF, and no single file satisfies all of them — the
+geometry layout alone decides it, so no amount of extra metadata bridges the
+gap. That is what `flavor` selects between; see
+[probes/RESULTS.md](probes/RESULTS.md) for the experiments behind it.
+
+| `flavor` | Layout | Honoured by |
+|---|---|---|
+| `prusa` (default) | one mesh, regions as triangle ranges in `Slic3r_PE_model.config` | PrusaSlicer |
+| `bambu` | component parts with `model_settings.config` | Bambu Studio, OrcaSlicer |
+| `generic` | geometry and colour tags only, no slicer config | any 3MF reader |
 
 ## Printability check
 
