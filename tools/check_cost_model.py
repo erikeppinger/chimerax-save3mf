@@ -18,6 +18,9 @@ CORE = "{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}"
 MMU_CODES = ["0", "4", "8", "0C", "1C", "2C", "3C", "4C", "5C", "6C", "7C",
              "8C", "9C", "AC", "BC", "CC"]
 
+# how far the estimate may drift from the slicer before the test suite fails
+TOLERANCE_PERCENT = 5.0
+
 
 def read_painted(path):
     with zipfile.ZipFile(path) as z:
@@ -73,13 +76,18 @@ def main():
 
     est_sum = int(per_layer.sum())
     est_sum_minus_one = int(np.maximum(per_layer - 1, 0).sum())
+    error = 100.0 * (est_sum_minus_one - measured) / measured
     print()
     print("measured tool changes in G-code : %d" % measured)
     print("estimate, regions per layer     : %d  (%+.0f%%)"
           % (est_sum, 100.0 * (est_sum - measured) / measured))
-    print("estimate, regions per layer - 1 : %d  (%+.0f%%)"
-          % (est_sum_minus_one,
-             100.0 * (est_sum_minus_one - measured) / measured))
+    print("estimate, regions per layer - 1 : %d  (%+.1f%%)  <- the one we use"
+          % (est_sum_minus_one, error))
+
+    if abs(error) > TOLERANCE_PERCENT:
+        print("FAIL: estimate is off by more than %.0f%%" % TOLERANCE_PERCENT)
+        sys.exit(1)
+    print("OK: within %.0f%%" % TOLERANCE_PERCENT)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,9 @@ in the slicer.
 save molecule.3mf size 80
 ```
 
-Status: **phase 2 complete** — geometry and colour parts both work, verified
+Status: **complete through phase 5** — geometry, colour painting, printability
+and print-cost reporting, Save-dialog options, docs, and a full test suite
+verified against PrusaSlicer, Bambu Studio and OrcaSlicer.
 end to end in PrusaSlicer, Bambu Studio and OrcaSlicer.
 
 ## Install
@@ -120,14 +122,43 @@ re-checks it against any painted export and its G-code.
 
 ## Testing
 
+```bash
+.\tests\run_all.ps1
 ```
-& "C:\Program Files\ChimeraX 1.12\bin\ChimeraX-console.exe" --nogui --exit --silent tests\test_basic.cxc
-& "C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer-console.exe" --info tests\out\surface.3mf
-& "C:\Program Files\ChimeraX 1.12\bin\python.exe" tools\inspect_3mf.py tests\out\surface.3mf
+
+Four stages, each of which fails the run:
+
+| Stage | What it proves |
+|---|---|
+| **install** | `devel install` succeeded **and** the installed bytes match `src/` — a failed build silently leaves the old version in place, so a whole run can otherwise pass against stale code |
+| **export tests** | 17 checks over real exported files: geometry matches ChimeraX's own STL export, `size` is exact, nothing sits at negative coordinates, painting covers every triangle, split parts tile the mesh with no gaps, the >15-colour fallback works, an empty scene errors clearly |
+| **slicers** | PrusaSlicer loads the painted export as manifold, preserves the painting through a round trip and **actually slices it**; Bambu Studio and OrcaSlicer preserve `paint_color`. The tool-change estimate is checked against the real G-code and must stay within 5% |
+| **wheel** | `devel build` produces a wheel containing both the package and its documentation |
+
+Slicers that are not installed are skipped, not failed.
+
+The real slice matters: the negative-coordinate bug passed every round-trip
+check and was caught only by slicing, because PrusaSlicer's GUI loader
+auto-arranges and hides the problem.
+
+Individual pieces can be run on their own:
+
+```bash
+& "C:\Program Files\ChimeraX 1.12\bin\ChimeraX-console.exe" --nogui --exit --silent --script tests\test_export.py
+```
+
+```bash
+& "C:\Program Files\ChimeraX 1.12\bin\python.exe" tools\validate_3mf.py tests\out\t_paint.3mf
 ```
 
 Note: the `python` on PATH is the Microsoft Store stub and does not run.
 Use ChimeraX's bundled interpreter as above.
+
+### A note on the suite itself
+
+It was checked by mutation: reintroducing the negative-coordinate bug made 7
+of the 17 checks fail with the right diagnosis. A suite that has never failed
+has not been tested.
 
 ## Slicer notes
 
