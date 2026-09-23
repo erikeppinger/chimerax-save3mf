@@ -66,23 +66,41 @@ one.
 ### Choosing the part count before exporting
 
 ```
-3mf palette [models SPEC] [maxColors N]
+3mf palette [models SPEC] [maxColors N] [size N] [scale N] [layerHeight N]
 ```
 
-Prints the colour regions the scene would produce, and what merging to each
-part count would cost — as swatches in the log, with the perceptual error in
-plain words:
+Prints the colour regions the scene would produce and what each merge level
+costs, on both axes that matter — how different it looks, and how long it
+takes to print:
 
 ```
-526 distinct colors across 814254 triangles
-  merge to 4    ■■■■               ΔE 21.7   strong shift
-  merge to 8    ■■■■■■■■           ΔE 9.3    clearly different
-  merge to 16   ■■■■■■■■■■■■■■■■   ΔE 4.7    slight shift
-  no merge                         ΔE 0.0    526 parts, exactly as colored
+526 distinct colors across 814254 triangles; 269 layers at 0.20 mm
+  merge to 4    ■■■■               ΔE 21.7   strong shift         ~638 tool changes
+  merge to 8    ■■■■■■■■           ΔE 9.3    clearly different   ~1720 tool changes
+  merge to 16   ■■■■■■■■■■■■■■■■   ΔE 4.7    slight shift        ~3672 tool changes
+  no merge                         ΔE 0.0    526 parts          ~38434 tool changes
 ```
 
 With `maxColors N` it shows that exact palette instead. Nothing is written —
 pick a number, then pass it to `save`.
+
+### Print cost
+
+A multi-material print spends most of its time changing tools, and each change
+purges filament into a wipe tower. What makes a colour expensive is not its
+area but **how many layers it appears in**, since it forces a tool change on
+each one. A part covering 0.4% of the model can drive 6% of the print time:
+
+```
+Part 5 (1a3n_D SES surface red) is 0.4% of the model but drives about 6% of the
+tool changes, because it appears in 52 of 269 layers. Dropping it with
+'maxColors 4' would save roughly 52 tool changes.
+```
+
+The estimate is parts-per-layer less one, summed over layers. Against real
+PrusaSlicer output it lands within ~1%: 805 vs 811 actual at five colours, 506
+vs 512 at three. [tools/check_cost_model.py](tools/check_cost_model.py)
+re-checks it against any painted export and its G-code.
 
 ## Layout
 

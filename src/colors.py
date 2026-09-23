@@ -110,8 +110,15 @@ def preview_merges(geometry, candidates):
         cluster_of_color, delta_e = _cluster_colors(unique_colors, color_areas, k)
         reps = _representative_colors(unique_colors, color_areas,
                                       cluster_of_color, k)
-        results.append((k, delta_e, reps))
+        results.append((k, delta_e, reps, cluster_of_color))
     return distinct, results
+
+
+def color_index(geometry):
+    """Distinct colours in the scene and which one each triangle has."""
+    tri_colors = geometry.triangle_colors[:, :3]
+    unique_colors, inverse = unique(tri_colors, axis=0, return_inverse=True)
+    return unique_colors, inverse.ravel()
 
 
 def describe_delta_e(delta_e):
