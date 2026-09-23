@@ -1,0 +1,22 @@
+# Phase 1 smoke test: fetch a structure, show three different representations,
+# and export each one.  Run headless:
+#   & "C:\Program Files\ChimeraX 1.12\bin\ChimeraX-console.exe" --nogui --exit --silent tests\test_basic.cxc
+
+open 1ubq
+
+# molecular surface
+surface
+save ~/Desktop/chimerax-3mf/tests/out/surface.3mf size 80
+
+# cartoon only
+~surface
+hide atoms
+cartoon
+save ~/Desktop/chimerax-3mf/tests/out/cartoon.3mf size 80
+
+# ball and stick, coloured by chain, with instanced atom spheres
+~cartoon
+show atoms
+style ball
+color bychain
+save ~/Desktop/chimerax-3mf/tests/out/ballstick.3mf size 80

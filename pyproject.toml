@@ -1,0 +1,39 @@
+[build-system]
+requires = ["ChimeraX-BundleBuilder"]
+build-backend = "chimerax.bundle_builder.cx_pep517"
+
+[project]
+name = "ChimeraX-Save3MF"
+version = "0.1.0"
+description = "Save ChimeraX scenes as 3MF files for 3D printing"
+authors = [{ name = "Erik Eppinger" }]
+license = { text = "Free for non-commercial use" }
+requires-python = ">=3.11"
+dependencies = ["ChimeraX-Core >=1.9"]
+dynamic = ["classifiers"]
+
+[project.readme]
+content-type = "text/markdown"
+text = """
+Adds 3MF to the formats ChimeraX can save, for 3D printing:
+
+    save molecule.3mf size 80
+
+The scene is written as it is displayed.  Colours are preserved as separate
+printable parts so a slicer can assign a filament to each one.
+"""
+
+[chimerax]
+package = "chimerax.save3mf"
+categories = ["Input/Output"]
+min-session-version = 1
+max-session-version = 1
+
+[chimerax.data-format."3MF"]
+category = "Generic 3D objects"
+suffixes = ".3mf"
+nicknames = "3mf"
+encoding = "binary"
+synopsis = "3D Manufacturing Format"
+reference-url = "https://3mf.io/specification/"
+save = true
