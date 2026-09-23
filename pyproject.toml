@@ -14,8 +14,8 @@ dependencies = ["ChimeraX-Core >=1.9"]
 dynamic = ["classifiers"]
 
 [project.urls]
-Repository = "https://github.com/ErikEppinger/chimerax-save3mf"
-Issues = "https://github.com/ErikEppinger/chimerax-save3mf/issues"
+Repository = "https://github.com/erikeppinger/chimerax-save3mf"
+Issues = "https://github.com/erikeppinger/chimerax-save3mf/issues"
 
 [project.readme]
 content-type = "text/markdown"
