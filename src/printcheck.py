@@ -22,6 +22,10 @@ DEBRIS_VOLUME_FRACTION = 0.01
 COHERENT_VOLUME_FRACTION = 0.8
 # thinnest feature a common 0.4 mm nozzle can hold up
 THIN_FEATURE_MM = 1.0
+# bigger than the build volume of all but the largest desktop printers
+LARGE_PLATE_MM = 300.0
+# below this the whole model is about as wide as a few extrusions
+TINY_MODEL_MM = 5.0
 
 
 class PrintReport:
@@ -48,6 +52,17 @@ class PrintReport:
     def warnings(self):
         """Human-readable problems, worst first.  Empty means nothing to say."""
         out = []
+        longest = max(self.size_mm) if self.size_mm else 0.0
+        if longest > LARGE_PLATE_MM:
+            out.append(
+                "Model is %.0f mm across, bigger than most build plates (a "
+                "Prusa XL is 360 mm). Scale it down with 'size N', or split "
+                "it up in the slicer." % longest)
+        elif 0.0 < longest < TINY_MODEL_MM:
+            out.append(
+                "Model is only %.1f mm across - about the width of a few "
+                "extrusions. Almost nothing will survive printing at this "
+                "size; scale it up with 'size N'." % longest)
         if not self.watertight:
             bits = []
             if self.open_edges:

@@ -1,0 +1,167 @@
+<html>
+<head>
+<link rel="stylesheet" type="text/css" href="../userdocs.css" />
+<title>3MF export</title>
+</head>
+<body>
+
+<a name="top"></a>
+<h3>3MF export for 3D printing</h3>
+
+<p>
+Saves the scene as a <a href="https://3mf.io/specification/">3MF</a> file, with
+the colouring preserved as separate parts a slicer can assign to individual
+filaments.
+</p>
+
+<h4>save</h4>
+
+<blockquote>
+<b>save</b> &nbsp;<i>filename</i><b>.3mf</b>
+&nbsp;[&nbsp;<b>models</b>&nbsp;<i>model-spec</i>&nbsp;]
+&nbsp;[&nbsp;<b>size</b>&nbsp;<i>mm</i>&nbsp;]
+&nbsp;[&nbsp;<b>scale</b>&nbsp;<i>mm-per-&#8491;</i>&nbsp;]
+&nbsp;[&nbsp;<b>colors</b>&nbsp;true|false&nbsp;]
+&nbsp;[&nbsp;<b>maxColors</b>&nbsp;<i>N</i>&nbsp;]
+&nbsp;[&nbsp;<b>flavor</b>&nbsp;prusa|bambu|generic&nbsp;]
+&nbsp;[&nbsp;<b>check</b>&nbsp;true|false&nbsp;]
+</blockquote>
+
+<p>
+The scene is written as displayed: whatever is shown in the graphics window is
+what gets exported, with hidden atoms, clipped surfaces and masked triangles
+left out. Instanced geometry such as atom spheres and bond cylinders is
+expanded into real triangles, and coincident vertices are merged so slicers
+see a connected mesh.
+</p>
+
+<ul>
+<li><b>models</b> &ndash; which models to export; the default is everything
+displayed.</li>
+
+<li><b>size</b> &ndash; scale so the longest edge of the model measures this
+many millimetres. This is usually what you want: molecules in &#8491;ngstroms
+are not printable sizes.</li>
+
+<li><b>scale</b> &ndash; millimetres per &#8491;ngstrom, default 1.0. Ignored
+if <b>size</b> is given.</li>
+
+<li><b>colors</b> &ndash; whether to split the model into one part per colour
+(default <b>true</b>). With <b>false</b> the whole model is a single part.</li>
+
+<li><b>maxColors</b> &ndash; merge down to at most this many parts. By default
+nothing is merged, so every distinct colour becomes its own part. See
+<a href="#palette">3mf palette</a> to decide the number.</li>
+
+<li><b>flavor</b> &ndash; which slicer the part structure is written for; see
+<a href="#flavors">Slicer flavours</a> below.</li>
+
+<li><b>check</b> &ndash; whether to report printability problems (default
+<b>true</b>).</li>
+</ul>
+
+<p>
+The model is placed with its bounding box starting at the origin and its
+lowest point at z = 0. Coordinates are never negative, because a slicer
+reading a 3MF without its own placement data takes them literally and anything
+at negative x or y is off the build plate.
+</p>
+
+<a name="palette"></a>
+<h4>3mf palette</h4>
+
+<blockquote>
+<b>3mf palette</b>
+&nbsp;[&nbsp;<b>models</b>&nbsp;<i>model-spec</i>&nbsp;]
+&nbsp;[&nbsp;<b>maxColors</b>&nbsp;<i>N</i>&nbsp;]
+</blockquote>
+
+<p>
+Reports the colour parts an export would produce, without writing anything.
+With no options it also shows what merging to each part count would cost, as
+colour swatches with the mean perceptual error (&Delta;E) in plain words, so
+the number of parts can be chosen before exporting:
+</p>
+
+<pre>
+526 distinct colors across 814254 triangles
+  merge to 4                       &Delta;E 21.7   strong shift
+  merge to 8                       &Delta;E 9.3    clearly different
+  merge to 16                      &Delta;E 4.7    slight shift
+  no merge                         &Delta;E 0.0    526 parts, exactly as colored
+</pre>
+
+<p>
+With <b>maxColors</b> <i>N</i> it shows that exact palette instead, with the
+triangle count and area share of each part.
+</p>
+
+<p>
+Colours are clustered in CIELAB rather than RGB, weighted by triangle area, so
+merging follows what the eye calls similar and a large surface is not merged
+away in favour of a few tiny ligand triangles. Each part keeps a colour that
+actually appears in the scene rather than a cluster average.
+</p>
+
+<a name="flavors"></a>
+<h4>Slicer flavours</h4>
+
+<p>
+Slicers store multi-part models in incompatible ways and the geometry layout
+alone decides which one understands a file, so no single file works everywhere.
+</p>
+
+<table border="1" cellpadding="4" cellspacing="0">
+<tr><th>flavor</th><th>Layout</th><th>Understood by</th></tr>
+<tr><td><b>prusa</b> (default)</td>
+    <td>one mesh, parts as triangle ranges in
+        <code>Slic3r_PE_model.config</code></td>
+    <td>PrusaSlicer</td></tr>
+<tr><td><b>bambu</b></td>
+    <td>component parts with <code>model_settings.config</code></td>
+    <td>Bambu Studio, OrcaSlicer</td></tr>
+<tr><td><b>generic</b></td>
+    <td>geometry and standard colour tags only</td>
+    <td>any 3MF reader</td></tr>
+</table>
+
+<p>
+Each part is written with an extruder already assigned, so a multi-tool
+printer needs no manual assignment at all. Parts are named after the drawing
+and the colour &ndash; for example <i>1a3n_A SES surface medium slate
+blue</i> &ndash; so the slicer's part list says which chain is which.
+</p>
+
+<a name="printability"></a>
+<h4>Printability report</h4>
+
+<p>
+Unless <b>check false</b> is given, each export reports what a slicer will
+make of the geometry. Nothing is modified; the report only describes.
+</p>
+
+<ul>
+<li><b>Disconnected pieces</b> &ndash; whether the model is one body, or loose
+fragments around a solid one. A plain cartoon is often many separate ribbon
+segments that would print as loose pieces.</li>
+<li><b>Not watertight</b> &ndash; open or non-manifold edges. Overlapping
+shells from ball-and-stick styles are the usual cause, and slicers repair them
+unpredictably.</li>
+<li><b>Sealed-in geometry</b> &ndash; pieces fully inside another piece. Since
+ChimeraX shows cartoon by default, adding a surface leaves the ribbon sealed
+inside it, invisible in the print but still costing filament and time.</li>
+<li><b>Thin features and extreme sizes</b> &ndash; pieces below what a 0.4 mm
+nozzle can hold, or a model larger than most build plates.</li>
+</ul>
+
+<p>
+To prepare a structure for printing &ndash; struts between disjoint pieces,
+thickened ribbons, solvent removal &ndash; use the
+<a href="https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxnihpresets">NIH 3D print
+presets</a> bundle. This bundle only measures and reports.
+</p>
+
+<hr>
+<address>UCSF ChimeraX bundle: Save3MF</address>
+</body>
+</html>

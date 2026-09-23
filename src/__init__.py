@@ -36,6 +36,13 @@ class _Save3MFAPI(BundleAPI):
                     'flavor': EnumOf(FLAVORS),
                 }
 
+            def save_args_widget(self, session):
+                from .gui import SaveOptionsWidget
+                return SaveOptionsWidget(session)
+
+            def save_args_string_from_widget(self, widget):
+                return widget.options_string()
+
         return Info()
 
 

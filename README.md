@@ -23,6 +23,11 @@ or headless:
 & "C:\Program Files\ChimeraX 1.12\bin\ChimeraX-console.exe" --nogui --exit --cmd "devel install C:\Users\Erik\Desktop\chimerax-3mf exit true"
 ```
 
+**Run it from the bundle directory.** `devel install` copies the documentation
+files relative to the *process* working directory rather than the bundle path,
+so from anywhere else the build fails and leaves an empty `src/docs` tree
+wherever it was launched.
+
 ## Command
 
 ```
@@ -87,6 +92,10 @@ pick a number, then pass it to `save`.
 | `src/__init__.py` | `BundleAPI` / `SaverInfo` — wires `save x.3mf` to the writer |
 | `src/scene.py` | walks displayed drawings, expands instances, welds vertices, scales to mm |
 | `src/writer3mf.py` | builds the 3MF (OPC zip + `3D/3dmodel.model`) |
+| `src/gui.py` | options shown in ChimeraX's Save dialog |
+| `src/cmd.py` | the `3mf palette` preview command |
+| `src/printcheck.py` | printability report (never modifies geometry) |
+| `docs/commands/3mf.html` | user documentation, installed into ChimeraX help |
 | `probes/` | phase 0.5 slicer experiments and [RESULTS.md](probes/RESULTS.md) |
 | `tools/` | probe generator, 3MF validator, 3MF inspector |
 | `tests/` | headless test scripts |

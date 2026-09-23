@@ -29,6 +29,9 @@ categories = ["Input/Output"]
 min-session-version = 1
 max-session-version = 1
 
+[chimerax.extra-files]
+"src/docs/user/commands" = ["docs/commands/*"]
+
 [chimerax.command."3mf palette"]
 category = "Input/Output"
 synopsis = "Preview the color parts a 3MF export would produce"

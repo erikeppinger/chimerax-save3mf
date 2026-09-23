@@ -4,3 +4,4 @@ dist/
 __pycache__/
 tests/out/
 probes/roundtrip/
+src/docs/user/commands/*.html
