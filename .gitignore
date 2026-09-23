@@ -5,3 +5,5 @@ __pycache__/
 tests/out/
 probes/roundtrip/
 src/docs/user/commands/*.html
+00000.log
+result.json
