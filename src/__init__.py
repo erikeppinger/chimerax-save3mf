@@ -17,11 +17,12 @@ class _Save3MFAPI(BundleAPI):
 
             @property
             def save_args(self):
-                from chimerax.core.commands import ModelsArg, FloatArg
+                from chimerax.core.commands import BoolArg, FloatArg, ModelsArg
                 return {
                     'models': ModelsArg,
                     'scale': FloatArg,
                     'size': FloatArg,
+                    'check': BoolArg,
                 }
 
         return Info()

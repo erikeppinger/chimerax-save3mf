@@ -27,8 +27,8 @@ RELS = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-def write_3mf(session, path, models=None, scale=None, size=None):
-    from . import scene
+def write_3mf(session, path, models=None, scale=None, size=None, check=True):
+    from . import printcheck, scene
 
     geometry = scene.collect_geometry(session, models)
     if geometry.triangle_count == 0:
@@ -41,10 +41,13 @@ def write_3mf(session, path, models=None, scale=None, size=None):
     geometry, used_scale = scene.place_for_printing(
         geometry, scale=1.0 if scale is None else scale, size=size)
 
+    report = printcheck.analyze(geometry)
+
     model_xml = _model_xml(session, geometry)
     _write_package(path, model_xml)
 
     _report(session, path, geometry, used_scale, before)
+    printcheck.log_report(session, report, quiet=not check)
 
 
 def _write_package(path, model_xml, extra_files=None):

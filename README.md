@@ -64,3 +64,14 @@ PrusaSlicer, Bambu Studio and OrcaSlicer disagree about how multi-part colour
 information is carried in 3MF, and no single file satisfies all of them. See
 [probes/RESULTS.md](probes/RESULTS.md) — the exporter will grow a `flavor`
 option in phase 2.
+
+## Printability check
+
+Every export runs a check and reports problems to the log — disconnected
+pieces, loose fragments, non-watertight meshes, features too thin to print.
+It never modifies geometry; pass `check false` to silence it.
+
+Preparing a structure for printing (struts between disjoint pieces, thickened
+ribbons, solvent removal) is what the
+[NIH 3D print presets](https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxnihpresets)
+bundle is for. The exporter just tells you when you need it.
