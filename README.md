@@ -118,9 +118,28 @@ gap. That is what `flavor` selects between; see
 
 ## Printability check
 
-Every export runs a check and reports problems to the log — disconnected
-pieces, loose fragments, non-watertight meshes, features too thin to print.
-It never modifies geometry; pass `check false` to silence it.
+Every export runs a check and reports problems to the log. It never modifies
+geometry; pass `check false` to silence it.
+
+- **disconnected pieces** — whether the model is one body, or loose fragments
+  (waters, ions) around a solid one
+- **not watertight** — open or non-manifold edges, which slicers will try to
+  repair unpredictably
+- **sealed-in geometry** — pieces fully enclosed inside another piece, which
+  print but can never be seen
+- **thin features** — pieces below what a 0.4 mm nozzle can hold
+
+The sealed-in check is worth the most in practice. ChimeraX shows cartoon by
+default, so adding a surface on top leaves the ribbon inside it — invisible in
+the print, but still sliced:
+
+```
+47 pieces (240628 triangles, 30% of the model) are sealed inside another piece
+and will never be visible, but still cost print time and filament.
+```
+
+On 1a3n that is 814k triangles and 9.6 MB versus 538k and 6.3 MB after
+`hide cartoon` — a third of the print, for nothing.
 
 Preparing a structure for printing (struts between disjoint pieces, thickened
 ribbons, solvent removal) is what the

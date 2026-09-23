@@ -12,7 +12,7 @@ will make of it, before the file is written.
 """
 
 from numpy import (
-    abs as np_abs, arange, cross, einsum, repeat, sort, unique, zeros,
+    abs as np_abs, arange, cross, einsum, repeat, sort, unique, where, zeros,
 )
 
 # a fragment smaller than this share of total volume is treated as debris
@@ -36,6 +36,10 @@ class PrintReport:
         self.thinnest_shell_mm = None
         self.triangle_count = 0
         self.size_mm = (0.0, 0.0, 0.0)
+        self.enclosed_count = 0
+        self.enclosed_triangles = 0
+        self.enclosed_checked = True     # False when skipped entirely
+        self.enclosed_partial = False    # True when only the largest were tested
 
     @property
     def watertight(self):
@@ -72,6 +76,19 @@ class PrintReport:
             out.append(
                 "Model is in %d separate pieces that do not touch. They will "
                 "print separately unless connected." % self.shell_count)
+        if self.enclosed_count:
+            share = (100.0 * self.enclosed_triangles / self.triangle_count
+                     if self.triangle_count else 0.0)
+            out.append(
+                "%d piece%s (%d triangles, %.0f%% of the model) %s sealed "
+                "inside another piece and will never be visible, but still "
+                "cost print time and filament. A cartoon left on underneath a "
+                "surface is the usual cause - hide it before exporting.%s"
+                % (self.enclosed_count, "" if self.enclosed_count == 1 else "s",
+                   self.enclosed_triangles, share,
+                   "is" if self.enclosed_count == 1 else "are",
+                   " Only the largest pieces were checked, so there may be more."
+                   if self.enclosed_partial else ""))
         if self.thinnest_shell_mm is not None and self.thinnest_shell_mm < THIN_FEATURE_MM:
             out.append(
                 "Thinnest piece measures %.2f mm across, below the ~%.1f mm a "
@@ -132,7 +149,9 @@ def _check_shells(vertices, triangles, report):
         return
 
     volumes = _shell_volumes(vertices, triangles, labels, n_shells)
-    extents = _shell_extents(vertices, triangles, labels, n_shells)
+    lows, highs = _shell_boxes(vertices, triangles, labels, n_shells)
+    extents = (highs - lows).min(axis=1)
+    _check_enclosed(vertices, triangles, labels, lows, highs, volumes, report)
 
     total = volumes.sum()
     if total <= 0:
@@ -189,8 +208,8 @@ def _shell_volumes(vertices, triangles, labels, n_shells):
     return np_abs(bincount(labels, weights=contrib, minlength=n_shells))
 
 
-def _shell_extents(vertices, triangles, labels, n_shells):
-    """Smallest bounding-box dimension of each piece."""
+def _shell_boxes(vertices, triangles, labels, n_shells):
+    """Bounding box of each piece."""
     from numpy import empty, full, inf, maximum, minimum
     vertex_labels = empty(len(vertices), dtype=labels.dtype)
     vertex_labels[triangles.ravel()] = repeat(labels, 3)
@@ -198,7 +217,127 @@ def _shell_extents(vertices, triangles, labels, n_shells):
     highs = full((n_shells, 3), -inf)
     minimum.at(lows, vertex_labels, vertices)
     maximum.at(highs, vertex_labels, vertices)
-    return (highs - lows).min(axis=1)
+    return lows, highs
+
+
+# ------------------------------------------------- enclosed (invisible) parts
+
+# testing every pair is quadratic; stop well before that hurts
+MAX_ENCLOSURE_TESTS = 64
+# above this many pieces the pairwise box comparison itself gets expensive
+MAX_SHELLS_FOR_ENCLOSURE = 2000
+# how many points of a piece must be inside the other for it to count
+ENCLOSURE_SAMPLES = 8
+
+
+def _check_enclosed(vertices, triangles, labels, lows, highs, volumes, report):
+    """Find pieces sealed inside another piece, which print but never show.
+
+    A cartoon left displayed under a molecular surface is the common case: it
+    is invisible in the print yet costs filament and time.
+    """
+    from numpy import bincount
+
+    n = len(volumes)
+    if n < 2:
+        return
+    if n > MAX_SHELLS_FOR_ENCLOSURE:
+        report.enclosed_checked = False
+        return
+
+    # only pairs whose boxes nest can possibly be enclosed
+    nested = (((lows[:, None, :] >= lows[None, :, :]).all(axis=2)) &
+              ((highs[:, None, :] <= highs[None, :, :]).all(axis=2)) &
+              (volumes[None, :] > volumes[:, None]))
+    candidates = [(inner, int(nested[inner].argmax()))
+                  for inner in range(n) if nested[inner].any()]
+
+    if not candidates:
+        return
+    if len(candidates) > MAX_ENCLOSURE_TESTS:
+        # biggest first: those are the ones worth telling the user about
+        candidates.sort(key=lambda pair: -volumes[pair[0]])
+        candidates = candidates[:MAX_ENCLOSURE_TESTS]
+        report.enclosed_partial = True
+
+    triangle_counts = bincount(labels, minlength=n)
+    enclosed_triangles = 0
+    enclosed_count = 0
+    for inner, outer in candidates:
+        if _shell_inside(vertices, triangles, labels, inner, outer):
+            enclosed_count += 1
+            enclosed_triangles += int(triangle_counts[inner])
+
+    report.enclosed_count = enclosed_count
+    report.enclosed_triangles = enclosed_triangles
+
+
+def _shell_inside(vertices, triangles, labels, inner, outer):
+    """True if every sampled point of the inner piece is inside the outer one."""
+    from numpy import unique
+    inner_tris = triangles[labels == inner]
+    outer_tris = triangles[labels == outer]
+    if len(inner_tris) == 0 or len(outer_tris) == 0:
+        return False
+
+    points = vertices[unique(inner_tris)]
+    step = max(1, len(points) // ENCLOSURE_SAMPLES)
+    points = points[::step][:ENCLOSURE_SAMPLES]
+
+    a = vertices[outer_tris[:, 0]]
+    b = vertices[outer_tris[:, 1]]
+    c = vertices[outer_tris[:, 2]]
+    box_low = __minimum3(a, b, c)
+    box_high = __maximum3(a, b, c)
+
+    for p in points:
+        if not _point_inside(p, a, b, c, box_low, box_high):
+            return False
+    return True
+
+
+def __minimum3(a, b, c):
+    from numpy import minimum
+    return minimum(minimum(a, b), c)
+
+
+def __maximum3(a, b, c):
+    from numpy import maximum
+    return maximum(maximum(a, b), c)
+
+
+def _point_inside(p, a, b, c, box_low, box_high):
+    """Parity of a ray cast straight up from p through the triangles."""
+    from numpy import abs as nabs
+    candidates = ((box_low[:, 0] <= p[0]) & (box_high[:, 0] >= p[0]) &
+                  (box_low[:, 1] <= p[1]) & (box_high[:, 1] >= p[1]) &
+                  (box_high[:, 2] >= p[2]))
+    if not candidates.any():
+        return False
+    A, B, C = a[candidates], b[candidates], c[candidates]
+
+    v0 = C[:, :2] - A[:, :2]
+    v1 = B[:, :2] - A[:, :2]
+    v2 = p[:2] - A[:, :2]
+    d00 = (v0 * v0).sum(axis=1)
+    d01 = (v0 * v1).sum(axis=1)
+    d11 = (v1 * v1).sum(axis=1)
+    d20 = (v2 * v0).sum(axis=1)
+    d21 = (v2 * v1).sum(axis=1)
+    denom = d00 * d11 - d01 * d01
+    usable = nabs(denom) > 1e-12
+    if not usable.any():
+        return False
+    denom = where(usable, denom, 1.0)
+    u = (d11 * d20 - d01 * d21) / denom
+    v = (d00 * d21 - d01 * d20) / denom
+    hit = usable & (u >= 0.0) & (v >= 0.0) & (u + v <= 1.0)
+    if not hit.any():
+        return False
+
+    z = (A[hit, 2] + u[hit] * (C[hit, 2] - A[hit, 2])
+         + v[hit] * (B[hit, 2] - A[hit, 2]))
+    return bool((z > p[2]).sum() % 2 == 1)
 
 
 def log_report(session, report, quiet=False):
