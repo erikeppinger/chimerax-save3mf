@@ -90,6 +90,73 @@ def build_regions(geometry, max_colors=None):
                         merged=merged, distinct=distinct, delta_e=delta_e)
 
 
+def preview_merges(geometry, candidates):
+    """What merging to each candidate part count would cost.
+
+    Returns (distinct colour count, [(k, mean delta E, representative
+    colours), ...]) without touching the geometry, so the choice can be made
+    before exporting anything.
+    """
+    tri_colors = geometry.triangle_colors[:, :3]
+    areas = triangle_areas(geometry)
+    unique_colors, inverse = unique(tri_colors, axis=0, return_inverse=True)
+    distinct = len(unique_colors)
+    color_areas = bincount(inverse.ravel(), weights=areas, minlength=distinct)
+
+    results = []
+    for k in candidates:
+        if k >= distinct:
+            continue
+        cluster_of_color, delta_e = _cluster_colors(unique_colors, color_areas, k)
+        reps = _representative_colors(unique_colors, color_areas,
+                                      cluster_of_color, k)
+        results.append((k, delta_e, reps))
+    return distinct, results
+
+
+def describe_delta_e(delta_e):
+    """Plain words for a CIELAB distance."""
+    if delta_e < 1.0:
+        return "identical to the eye"
+    if delta_e < 2.0:
+        return "barely visible"
+    if delta_e < 5.0:
+        return "slight shift"
+    if delta_e < 10.0:
+        return "clearly different"
+    return "strong shift"
+
+
+def log_palette(session, names, hex_colors, counts=None, areas=None):
+    """Colour swatches in the ChimeraX log, which renders HTML."""
+    total = float(areas.sum()) if areas is not None and len(areas) else 0.0
+    rows = []
+    for i, (name, hex_color) in enumerate(zip(names, hex_colors)):
+        extra = ""
+        if counts is not None:
+            extra += '<td align="right">&nbsp;%d triangles</td>' % counts[i]
+        if total > 0:
+            extra += '<td align="right">&nbsp;%.1f%%</td>' % (100.0 * areas[i] / total)
+        rows.append(
+            '<tr><td style="background:%s;width:2em">&nbsp;</td>'
+            '<td>&nbsp;part %d</td><td>&nbsp;%s</td>%s</tr>'
+            % (hex_color, i + 1, _escape(name), extra))
+    session.logger.info('<table style="border-spacing:0">%s</table>'
+                        % "".join(rows), is_html=True)
+
+
+def swatch_strip(hex_colors, width="1.2em"):
+    """A row of colour chips as an inline HTML table."""
+    cells = "".join('<td style="background:%s;width:%s">&nbsp;</td>' % (c, width)
+                    for c in hex_colors)
+    return '<table style="border-spacing:0;display:inline-table"><tr>%s</tr></table>' % cells
+
+
+def _escape(text):
+    return (str(text).replace("&", "&amp;").replace("<", "&lt;")
+                     .replace(">", "&gt;").replace('"', "&quot;"))
+
+
 def triangle_areas(geometry):
     """Area of each triangle in the geometry's own units."""
     v, t = geometry.vertices, geometry.triangles

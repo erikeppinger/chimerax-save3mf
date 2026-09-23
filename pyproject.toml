@@ -29,6 +29,10 @@ categories = ["Input/Output"]
 min-session-version = 1
 max-session-version = 1
 
+[chimerax.command."3mf palette"]
+category = "Input/Output"
+synopsis = "Preview the color parts a 3MF export would produce"
+
 [chimerax.data-format."3MF"]
 category = "Generic 3D objects"
 suffixes = ".3mf"

@@ -49,6 +49,8 @@ class SceneGeometry:
 
 def collect_geometry(session, models=None):
     """Return a SceneGeometry for the displayed parts of the given models."""
+    _flush_pending_graphics(session)
+
     if models is None:
         models = session.models.list()
 
@@ -74,6 +76,20 @@ def collect_geometry(session, models=None):
                              zeros((0, 4), uint8), [])
 
     return _combine(pieces, sources)
+
+
+def _flush_pending_graphics(session):
+    """Apply changes that have not reached the drawings yet.
+
+    Commands like 'hide atoms' mark the scene as changed but the drawings are
+    only rebuilt on the next frame.  Reading geometry before that gives the
+    previous state - hidden atoms still present, recent recolouring missing.
+    Nothing forces a frame in --nogui, so export what would be drawn next.
+    """
+    try:
+        session.update_loop.update_graphics_now()
+    except Exception:
+        pass        # no update loop (or no graphics at all); use what we have
 
 
 def _drawing_name(d):

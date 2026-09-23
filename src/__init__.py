@@ -7,6 +7,11 @@ from chimerax.core.toolshed import BundleAPI
 class _Save3MFAPI(BundleAPI):
 
     @staticmethod
+    def register_command(command_name, logger):
+        from . import cmd
+        cmd.register_command(command_name, logger)
+
+    @staticmethod
     def run_provider(session, name, mgr, **kw):
         from chimerax.save_command import SaverInfo
 

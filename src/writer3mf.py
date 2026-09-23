@@ -335,28 +335,12 @@ def _report(session, path, geometry, used_scale, triangles_before_weld,
         session.logger.info("%d color region%s, flavor %s"
                             % (regions.count, "" if regions.count == 1 else "s",
                                flavor))
-    _log_palette(session, regions)
+    from .colors import MAX_REGIONS_BEFORE_WARNING, log_palette
+    log_palette(session, regions.names, regions.hex_colors(alpha=False),
+                regions.counts, regions.areas)
 
-    from .colors import MAX_REGIONS_BEFORE_WARNING
     if regions.count > MAX_REGIONS_BEFORE_WARNING:
         session.logger.warning(
-            "%d parts is a lot to assign by hand in a slicer. Use "
-            "'maxColors N' to merge them down to N." % regions.count)
-
-
-def _log_palette(session, regions):
-    """Colour swatches in the ChimeraX log, which renders HTML."""
-    rows = []
-    total_area = float(regions.areas.sum()) or 1.0
-    for i, (name, hex_color) in enumerate(zip(regions.names,
-                                              regions.hex_colors(alpha=False))):
-        rows.append(
-            '<tr><td style="background:%s;width:2em">&nbsp;</td>'
-            '<td>&nbsp;part %d</td><td>&nbsp;%s</td>'
-            '<td align="right">&nbsp;%d triangles</td>'
-            '<td align="right">&nbsp;%.1f%%</td></tr>'
-            % (hex_color, i + 1, _xml_escape(name), regions.counts[i],
-               100.0 * regions.areas[i] / total_area))
-    session.logger.info(
-        '<table style="border-spacing:0">%s</table>' % "".join(rows),
-        is_html=True)
+            "%d parts is a lot to assign by hand in a slicer. Run "
+            "'3mf palette' to see the merge options, then export with "
+            "'maxColors N'." % regions.count)

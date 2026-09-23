@@ -58,6 +58,27 @@ reports the mean colour shift:
 Each part's colour is always a real colour from the scene, never an averaged
 one.
 
+### Choosing the part count before exporting
+
+```
+3mf palette [models SPEC] [maxColors N]
+```
+
+Prints the colour regions the scene would produce, and what merging to each
+part count would cost — as swatches in the log, with the perceptual error in
+plain words:
+
+```
+526 distinct colors across 814254 triangles
+  merge to 4    ■■■■               ΔE 21.7   strong shift
+  merge to 8    ■■■■■■■■           ΔE 9.3    clearly different
+  merge to 16   ■■■■■■■■■■■■■■■■   ΔE 4.7    slight shift
+  no merge                         ΔE 0.0    526 parts, exactly as colored
+```
+
+With `maxColors N` it shows that exact palette instead. Nothing is written —
+pick a number, then pass it to `save`.
+
 ## Layout
 
 | Path | What |
