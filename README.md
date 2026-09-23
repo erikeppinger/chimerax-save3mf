@@ -11,7 +11,6 @@ save molecule.3mf size 80
 Status: **complete through phase 5** — geometry, colour painting, printability
 and print-cost reporting, Save-dialog options, docs, and a full test suite
 verified against PrusaSlicer, Bambu Studio and OrcaSlicer.
-end to end in PrusaSlicer, Bambu Studio and OrcaSlicer.
 
 ## Install
 
@@ -34,25 +33,28 @@ wherever it was launched.
 
 ```
 save PATH.3mf [models SPEC] [scale N] [size N] [colors true|false]
-              [maxColors N] [flavor prusa|bambu|generic] [check true|false]
+              [maxColors N] [flavor prusa|bambu|generic] [paint true|false]
+              [check true|false]
 ```
 
 - `models` — which models to export; default is everything displayed
 - `scale` — millimetres per Ångström (default 1.0)
 - `size` — scale so the longest edge is N mm; overrides `scale`
-- `colors` — split the model into one part per colour (default true)
-- `maxColors` — merge down to at most N parts; default is no merging
-- `flavor` — which slicer the part structure targets (default `prusa`)
+- `colors` — carry the scene's colours into the file (default true)
+- `maxColors` — merge down to at most N colours; default is no merging
+- `flavor` — which slicer the file targets (default `prusa`)
+- `paint` — paint extruders per triangle (default), or `false` to split the
+  mesh into named parts instead
 - `check` — run the printability check (default true)
 
 The model sits in the positive octant with its lowest point at z = 0.
 Coordinates must not go negative or slicers place the model off the bed.
 
-### Colours become printable parts
+### Colours become printable colours
 
-Each distinct colour in the scene becomes a separate part with a pre-assigned
-extruder, named after the drawing and the colour — `1a3n_A SES surface medium
-slate blue` — so a slicer's part list says which chain is which.
+Each distinct colour in the scene becomes an extruder painted onto those
+triangles, so a multi-tool printer needs no manual assignment: open the file
+and the chains are already painted.
 
 Continuous colouring (rainbow, by B-factor) can produce hundreds of distinct
 colours. `maxColors N` clusters them in CIELAB, weighted by triangle area, and
@@ -62,8 +64,12 @@ reports the mean colour shift:
 526 distinct colors merged into 5 printable parts (mean color shift ΔE 16.6)
 ```
 
-Each part's colour is always a real colour from the scene, never an averaged
-one.
+Each colour is always a real colour from the scene, never an averaged one.
+
+Two limits worth knowing. A slicer can paint at most **15** extruders; above
+that the exporter splits the mesh into parts instead and says so. And a file
+can paint more extruders than your printer has tools — the surplus then prints
+with filament 1 and the slicer says nothing, so the exporter warns above five.
 
 ### Choosing the part count before exporting
 
@@ -114,11 +120,13 @@ re-checks it against any painted export and its G-code.
 | `src/writer3mf.py` | builds the 3MF (OPC zip + `3D/3dmodel.model`) |
 | `src/gui.py` | options shown in ChimeraX's Save dialog |
 | `src/cmd.py` | the `3mf palette` preview command |
+| `src/colors.py` | colour regions, CIELAB clustering, palette rendering |
 | `src/printcheck.py` | printability report (never modifies geometry) |
+| `src/printcost.py` | tool-change estimate behind the print-cost flag |
 | `docs/commands/3mf.html` | user documentation, installed into ChimeraX help |
-| `probes/` | phase 0.5 slicer experiments and [RESULTS.md](probes/RESULTS.md) |
-| `tools/` | probe generator, 3MF validator, 3MF inspector |
-| `tests/` | headless test scripts |
+| `probes/` | slicer experiments and [RESULTS.md](probes/RESULTS.md) — why the file looks the way it does |
+| `tools/` | probe generators, 3MF validator and inspector, cost-model check |
+| `tests/` | `run_all.ps1` driver, headless export suite, widget and palette captures |
 
 ## Testing
 
