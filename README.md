@@ -121,9 +121,20 @@ gap. That is what `flavor` selects between; see
 
 | `flavor` | Layout | Honoured by |
 |---|---|---|
-| `prusa` (default) | one mesh, regions as triangle ranges in `Slic3r_PE_model.config` | PrusaSlicer |
-| `bambu` | component parts with `model_settings.config` | Bambu Studio, OrcaSlicer |
-| `generic` | geometry and colour tags only, no slicer config | any 3MF reader |
+| `prusa` (default) | one mesh, extruder painted per triangle (`slic3rpe:mmu_segmentation`) | PrusaSlicer |
+| `bambu` | one mesh, extruder painted per triangle (`paint_color`) | Bambu Studio, OrcaSlicer |
+| `generic` | geometry and colour tags only, no slicer data | any 3MF reader |
+
+### Painting, not splitting
+
+Colours are written as **per-triangle extruder painting** — the same mechanism
+a slicer's own multi-material paint tool uses. The mesh stays whole, so there
+is nothing for the slicer to repair.
+
+The alternative, splitting the mesh into one part per colour, leaves every
+patch edged with open boundaries and a repair warning on every part. Pass
+`paint false` to get that layout anyway; it is also the automatic fallback
+above 15 colours, which is the most a slicer can paint.
 
 ## Printability check
 

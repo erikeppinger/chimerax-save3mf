@@ -34,6 +34,7 @@ class _Save3MFAPI(BundleAPI):
                     'colors': BoolArg,
                     'max_colors': PositiveIntArg,
                     'flavor': EnumOf(FLAVORS),
+                    'paint': BoolArg,
                 }
 
             def save_args_widget(self, session):

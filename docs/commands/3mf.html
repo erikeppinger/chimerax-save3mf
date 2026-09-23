@@ -112,24 +112,40 @@ alone decides which one understands a file, so no single file works everywhere.
 </p>
 
 <table border="1" cellpadding="4" cellspacing="0">
-<tr><th>flavor</th><th>Layout</th><th>Understood by</th></tr>
+<tr><th>flavor</th><th>Colour written as</th><th>Understood by</th></tr>
 <tr><td><b>prusa</b> (default)</td>
-    <td>one mesh, parts as triangle ranges in
-        <code>Slic3r_PE_model.config</code></td>
+    <td>per-triangle painting,
+        <code>slic3rpe:mmu_segmentation</code></td>
     <td>PrusaSlicer</td></tr>
 <tr><td><b>bambu</b></td>
-    <td>component parts with <code>model_settings.config</code></td>
+    <td>per-triangle painting, <code>paint_color</code></td>
     <td>Bambu Studio, OrcaSlicer</td></tr>
 <tr><td><b>generic</b></td>
-    <td>geometry and standard colour tags only</td>
+    <td>standard colour tags only</td>
     <td>any 3MF reader</td></tr>
 </table>
 
 <p>
-Each part is written with an extruder already assigned, so a multi-tool
-printer needs no manual assignment at all. Parts are named after the drawing
-and the colour &ndash; for example <i>1a3n_A SES surface medium slate
-blue</i> &ndash; so the slicer's part list says which chain is which.
+Each colour is written as an extruder already assigned to those triangles, so
+a multi-tool printer needs no manual assignment at all.
+</p>
+
+<a name="painting"></a>
+<h4>Painting rather than splitting</h4>
+
+<p>
+Colours are painted onto the triangles of a single mesh, which is what a
+slicer's own multi-material paint tool produces. The mesh keeps its topology,
+so there is nothing for the slicer to repair.
+</p>
+
+<p>
+The alternative is to split the mesh into one part per colour. That also
+works, and gives each part a readable name in the slicer's part list, but
+every patch is then edged with open boundaries and the slicer flags a repair
+warning on each one. Use <b>paint false</b> to choose that layout. It is also
+used automatically above 15 colours, which is the most a slicer can paint; the
+log says so when that happens.
 </p>
 
 <a name="printability"></a>

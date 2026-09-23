@@ -26,6 +26,17 @@ import zipfile
 
 CORE_NS = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
 MAT_NS = "http://schemas.microsoft.com/3dmanufacturing/material/2015/02"
+SLIC3RPE_NS = "http://schemas.slic3r.org/3mf/2017/06"
+
+# Per-triangle extruder painting.  Splitting a mesh into one volume per colour
+# leaves every patch edged with open boundaries, which slicers flag and then
+# try to repair; painting keeps the mesh whole and assigns extruders per
+# triangle instead.  Index N is extruder N; index 0 means unpainted.  The code
+# for extruder N is MMU_CODES[N], verified by slicing probe H (see
+# probes/RESULTS.md) - the published tables are off by one.
+MMU_CODES = ["0", "4", "8", "0C", "1C", "2C", "3C", "4C", "5C", "6C", "7C",
+             "8C", "9C", "AC", "BC", "CC"]
+MAX_PAINTED_EXTRUDERS = len(MMU_CODES) - 1
 
 FLAVORS = ("prusa", "bambu", "generic")
 
@@ -50,7 +61,7 @@ FIRST_PART_OBJECT_ID = 10
 
 
 def write_3mf(session, path, models=None, scale=None, size=None, check=True,
-              colors=True, max_colors=None, flavor="prusa"):
+              colors=True, max_colors=None, flavor="prusa", paint=True):
     from chimerax.core.errors import UserError
     from . import colors as color_module, printcheck, scene
 
@@ -76,7 +87,19 @@ def write_3mf(session, path, models=None, scale=None, size=None, check=True,
         regions = color_module.build_regions(geometry, max_colors=max_colors)
         geometry = _sort_by_region(geometry, regions)
 
-    if flavor == "bambu" and regions is not None and regions.count > 1:
+    painting = paint and flavor in ("prusa", "bambu") and regions is not None
+    if painting and regions.count > MAX_PAINTED_EXTRUDERS:
+        session.logger.warning(
+            "%d color regions is more than the %d a slicer can paint, so the "
+            "model was split into separate parts instead. Each part then has "
+            "open edges where it meets its neighbours. Use 'maxColors %d' or "
+            "fewer to keep one watertight mesh."
+            % (regions.count, MAX_PAINTED_EXTRUDERS, MAX_PAINTED_EXTRUDERS))
+        painting = False
+
+    if painting:
+        model_xml, extra = _painted_package(session, geometry, regions, flavor)
+    elif flavor == "bambu" and regions is not None and regions.count > 1:
         model_xml, extra = _bambu_package(session, geometry, regions)
     else:
         model_xml, extra = _prusa_package(session, geometry, regions,
@@ -155,6 +178,98 @@ def _write_color_resources(out, regions):
     for hex_color in regions.hex_colors():
         out.write('   <m:color color="%s"/>\n' % hex_color)
     out.write('  </m:colorgroup>\n')
+
+
+# --------------------------------------------------------- painted flavour
+
+def _painted_package(session, geometry, regions, flavor):
+    """One watertight mesh with an extruder painted onto each triangle.
+
+    This is what a slicer's own multi-material painting produces, so the mesh
+    keeps its topology: no split parts, no open edges, nothing for the slicer
+    to repair.
+    """
+    prusa = (flavor == "prusa")
+    attribute = "slic3rpe:mmu_segmentation" if prusa else "paint_color"
+
+    out = io.StringIO()
+    from chimerax import app_dirs
+    from time import strftime
+    out.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+    extra_ns = ' xmlns:slic3rpe="%s"' % SLIC3RPE_NS if prusa else ""
+    out.write('<model unit="millimeter" xml:lang="en-US" xmlns="%s" '
+              'xmlns:m="%s"%s>\n' % (CORE_NS, MAT_NS, extra_ns))
+    out.write(' <metadata name="Application">%s %s</metadata>\n'
+              % (app_dirs.appname, app_dirs.version))
+    out.write(' <metadata name="Title">%s</metadata>\n' % _scene_name(session))
+    out.write(' <metadata name="CreationDate">%s</metadata>\n'
+              % strftime("%Y-%m-%d"))
+    out.write(' <resources>\n')
+    _write_color_resources(out, regions)
+    out.write('  <object id="%d" type="model" name="%s">\n'
+              % (WRAPPER_OBJECT_ID, _scene_name(session)))
+    out.write('   <mesh>\n')
+    out.write('    <vertices>\n')
+    _write_vertices(out, geometry.vertices)
+    out.write('    </vertices>\n')
+    out.write('    <triangles>\n')
+    _write_painted_triangles(out, geometry.triangles, regions.labels, attribute)
+    out.write('    </triangles>\n')
+    out.write('   </mesh>\n')
+    out.write('  </object>\n')
+    out.write(' </resources>\n')
+    out.write(' <build>\n')
+    out.write('  <item objectid="%d" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>\n'
+              % WRAPPER_OBJECT_ID)
+    out.write(' </build>\n')
+    out.write('</model>\n')
+
+    name = _scene_name(session)
+    if prusa:
+        config = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n'
+            ' <object id="%d">\n'
+            '  <metadata type="object" key="name" value="%s"/>\n'
+            '  <volume firstid="0" lastid="%d">\n'
+            '   <metadata type="volume" key="name" value="%s"/>\n'
+            '   <mesh edges_fixed="0" degenerate_facets="0" facets_removed="0"'
+            ' facets_reversed="0" backwards_edges="0"/>\n'
+            "  </volume>\n </object>\n</config>\n"
+            % (WRAPPER_OBJECT_ID, name, len(geometry.triangles) - 1, name))
+        extra = {"Metadata/Slic3r_PE_model.config": config}
+    else:
+        config = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n'
+            '  <object id="%d">\n'
+            '   <metadata key="name" value="%s"/>\n'
+            '   <metadata key="extruder" value="1"/>\n'
+            '    <part id="%d" subtype="normal_part">\n'
+            '     <metadata key="name" value="%s"/>\n'
+            '     <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>\n'
+            "    </part>\n  </object>\n</config>\n"
+            % (WRAPPER_OBJECT_ID, name, WRAPPER_OBJECT_ID, name))
+        extra = {"Metadata/model_settings.config": config}
+    return out.getvalue(), extra
+
+
+def _write_painted_triangles(out, triangles, labels, attribute):
+    """Triangles carrying a per-triangle extruder code."""
+    from numpy import savetxt
+    rows = triangles
+    codes = [MMU_CODES[min(int(label) + 1, MAX_PAINTED_EXTRUDERS)]
+             for label in labels]
+    # savetxt cannot mix numbers and strings, so write one run per code;
+    # triangles are already sorted by region, so this is one call per region
+    start = 0
+    n = len(rows)
+    while start < n:
+        end = start + 1
+        while end < n and codes[end] == codes[start]:
+            end += 1
+        savetxt(out, rows[start:end],
+                fmt='     <triangle v1="%d" v2="%d" v3="%d" '
+                    + attribute + '="' + codes[start] + '"/>')
+        start = end
 
 
 # ------------------------------------------------------------ prusa flavour

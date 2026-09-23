@@ -47,6 +47,45 @@ Caveat: Bambu's "Standard 3MF Color Parsing" is a GUI dialog, so the CLI may
 skip `m:colorgroup` parsing that the GUI would offer. Untested. It costs
 nothing to keep writing the colour tags either way.
 
+## Probe H: painting beats splitting (tested 2026-09-23)
+
+Splitting a mesh into one volume per colour works, but every patch is then
+edged with open boundaries. PrusaSlicer flags each part with a repair warning,
+and a real export of 1a3n showed exactly that — eight parts, eight warnings.
+
+Slicers have a purpose-built mechanism for this: **per-triangle extruder
+painting**, which is what their own multi-material paint tool writes. The mesh
+stays whole.
+
+| | Attribute | Namespace |
+|---|---|---|
+| PrusaSlicer | `slic3rpe:mmu_segmentation` | `http://schemas.slic3r.org/3mf/2017/06` |
+| Bambu Studio / OrcaSlicer | `paint_color` | none |
+
+A triangle painted entirely with one extruder carries a short code. **The
+published tables are off by one**, so probe H was sliced to settle it: three
+slabs of volume ratio 1:2:3, painted with codes `4`, `8`, `0C`, produced
+
+```
+; filament used [g] = 3.02, 4.64, 5.44, 0.00, 0.00
+```
+
+— smallest slab on extruder 1, largest on extruder 3. So the mapping is
+**extruder N → `MMU_CODES[N]`**, with index 0 meaning unpainted:
+
+```
+["0", "4", "8", "0C", "1C", "2C", "3C", "4C",
+ "5C", "6C", "7C", "8C", "9C", "AC", "BC", "CC"]
+```
+
+Both families use the identical encoding, differing only in attribute name.
+Round-tripping a real painted export gave back the same codes on the same
+triangles in all three slicers, one volume, `manifold = yes`, and the sliced
+G-code used one filament per chain.
+
+Limit: 15 painted extruders. Above that the exporter falls back to split parts
+and says why.
+
 ## There is no universal layout
 
 The two families need mutually exclusive *geometry* layouts, which no amount of

@@ -429,6 +429,72 @@ def probe_g():
                    "Metadata/Slic3r_PE_model.config": prusa_cfg})
 
 
+# ---------------------------------------------------------------- probe H
+SLIC3RPE_NS = "http://schemas.slic3r.org/3mf/2017/06"
+
+# per the community-documented encoding: colour index 0..2 -> (i << 2),
+# colour index 3+ -> "C" preceded by the extension nibble.  Extruder N is
+# said to be colour index N-1.  That offset is exactly what this probe tests.
+MMU_CODES = ["0", "4", "8", "0C", "1C", "2C", "3C", "4C"]
+
+
+def probe_h():
+    """PrusaSlicer MMU painting: ONE mesh, per-triangle extruder, no volumes.
+
+    Splitting a mesh into per-colour volumes leaves every patch with open
+    edges.  Painting assigns extruders per triangle instead, so the mesh stays
+    whole.  Slabs have deliberately different volumes (1:2:3) so the sliced
+    filament usage says which extruder each code really means.
+    """
+    heights = [(0.0, 5.0), (5.0, 15.0), (15.0, 30.0)]
+    verts, tris, owner = [], [], []
+    for i, (z0, z1) in enumerate(heights):
+        v, t = box(0, 0, z0, 30.0, 30.0, z1)
+        base = len(verts)
+        verts.extend(v)
+        tris.extend((a + base, b + base, c + base) for a, b, c in t)
+        owner.extend([i] * len(t))
+
+    # slab 0 -> code for "extruder 2", slab 1 -> "3", slab 2 -> "4"
+    extra = ['slic3rpe:mmu_segmentation="%s"' % MMU_CODES[owner[i] + 1]
+             for i in range(len(tris))]
+
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<model unit="millimeter" xml:lang="en-US" xmlns="%s" xmlns:slic3rpe="%s">\n'
+        ' <metadata name="Application">ChimeraX 3MF probe</metadata>\n'
+        " <resources>\n"
+        '  <object id="1" type="model" name="probe H mmu painting">\n'
+        "   <mesh>\n"
+        "    <vertices>\n%s\n    </vertices>\n"
+        "    <triangles>\n%s\n    </triangles>\n"
+        "   </mesh>\n"
+        "  </object>\n"
+        " </resources>\n"
+        " <build>\n"
+        '  <item objectid="1" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>\n'
+        " </build>\n"
+        "</model>\n"
+        % (CORE_NS, SLIC3RPE_NS, vertex_xml(verts, "     "),
+           triangle_xml(tris, extra, "     "))
+    )
+    config = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        "<config>\n"
+        ' <object id="1">\n'
+        '  <metadata type="object" key="name" value="probe H mmu painting"/>\n'
+        '  <volume firstid="0" lastid="%d">\n'
+        '   <metadata type="volume" key="name" value="painted"/>\n'
+        '   <mesh edges_fixed="0" degenerate_facets="0" facets_removed="0"'
+        ' facets_reversed="0" backwards_edges="0"/>\n'
+        "  </volume>\n"
+        " </object>\n"
+        "</config>\n" % (len(tris) - 1)
+    )
+    write_package("probe_H_mmu_paint.3mf", xml,
+                  {"Metadata/Slic3r_PE_model.config": config})
+
+
 if __name__ == "__main__":
     OUT_DIR = os.path.abspath(OUT_DIR)
     os.makedirs(OUT_DIR, exist_ok=True)
@@ -439,3 +505,4 @@ if __name__ == "__main__":
     probe_e()
     probe_f()
     probe_g()
+    probe_h()

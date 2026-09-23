@@ -84,7 +84,7 @@ def build_regions(geometry, max_colors=None):
                                            cluster_of_color, n)
     counts = bincount(labels, minlength=n)
     region_areas = bincount(labels, weights=areas, minlength=n)
-    names = _region_names(geometry, labels, region_colors, n)
+    names = _region_names(geometry, labels, region_colors, n, areas)
 
     return ColorRegions(labels, region_colors, counts, region_areas, names,
                         merged=merged, distinct=distinct, delta_e=delta_e)
@@ -186,10 +186,15 @@ def _representative_colors(unique_colors, color_areas, cluster_of_color, n):
     return best
 
 
-def _region_names(geometry, labels, region_colors, n):
+def _region_names(geometry, labels, region_colors, n, areas=None):
     """Name each region after the drawing that contributes most of it, plus
     the colour - a slicer shows these in its part list, so they have to say
-    which bit of the molecule this is."""
+    which bit of the molecule this is.
+
+    Dominance is by *area*, not triangle count.  Cartoon ribbons are made of
+    many tiny triangles, so counting them would name a region after a ribbon
+    hidden inside a surface that covers a hundred times the area.
+    """
     sources = getattr(geometry, 'triangle_sources', None)
     source_names = getattr(geometry, 'source_names', None)
     color_names = _builtin_color_names()
@@ -200,9 +205,11 @@ def _region_names(geometry, labels, region_colors, n):
                                       _hex(rgb, alpha=False))
         label = None
         if sources is not None and source_names:
-            in_region = sources[labels == r]
-            if len(in_region):
-                dominant = bincount(in_region,
+            in_region = labels == r
+            region_sources = sources[in_region]
+            if len(region_sources):
+                weights = None if areas is None else areas[in_region]
+                dominant = bincount(region_sources, weights=weights,
                                     minlength=len(source_names)).argmax()
                 label = _tidy(source_names[dominant])
         names.append("%s %s" % (label, color_label) if label else color_label)
