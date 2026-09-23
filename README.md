@@ -74,19 +74,22 @@ with filament 1 and the slicer says nothing, so the exporter warns above five.
 ### Choosing the part count before exporting
 
 ```
-3mf palette [models SPEC] [maxColors N] [size N] [scale N] [layerHeight N]
+3mf palette [models SPEC] [maxColors N] [size N] [scale N]
+            [layerHeight N] [tools N]
 ```
 
 Prints the colour regions the scene would produce and what each merge level
-costs, on both axes that matter — how different it looks, and how long it
-takes to print:
+costs, on both axes that matter — how different it looks, and how much print
+time it adds:
 
 ```
-526 distinct colors across 814254 triangles; 269 layers at 0.20 mm
-  merge to 4    ■■■■               ΔE 21.7   strong shift         ~638 tool changes
-  merge to 8    ■■■■■■■■           ΔE 9.3    clearly different   ~1720 tool changes
-  merge to 16   ■■■■■■■■■■■■■■■■   ΔE 4.7    slight shift        ~3672 tool changes
-  no merge                         ΔE 0.0    526 parts          ~38434 tool changes
+526 distinct colors across 814254 triangles; 307 layers at 0.20 mm,
+about 3h 57m spent changing tools (774 changes on a 5-tool printer)
+  merge to 2    ■■                 ΔE 32.5   strong shift        +1h 28m changing tools
+  merge to 4    ■■■■               ΔE 21.7   strong shift        +3h 15m changing tools
+  merge to 5    ■■■■■              ΔE 16.6   strong shift        +4h 40m changing tools
+  merge to 8    ■■■■■■■■           ΔE 9.3    clearly different   +5h 44m changing tools
+  no merge                         ΔE 0.0    526 parts           +3h 57m changing tools
 ```
 
 With `maxColors N` it shows that exact palette instead. Nothing is written —
@@ -97,18 +100,31 @@ pick a number, then pass it to `save`.
 A multi-material print spends most of its time changing tools, and each change
 purges filament into a wipe tower. What makes a colour expensive is not its
 area but **how many layers it appears in**, since it forces a tool change on
-each one. A part covering 0.4% of the model can drive 6% of the print time:
+each one. A part covering 0.4% of the model can cost half an hour:
 
 ```
-Part 5 (1a3n_D SES surface red) is 0.4% of the model but drives about 6% of the
+Part 5 (1a3n_D SES surface red) is 0.4% of the model but costs about 16m of
 tool changes, because it appears in 52 of 269 layers. Dropping it with
-'maxColors 4' would save roughly 52 tool changes.
+'maxColors 4' would get that time back.
 ```
 
-The estimate is parts-per-layer less one, summed over layers. Against real
-PrusaSlicer output it lands within ~1%: 805 vs 811 actual at five colours, 506
-vs 512 at three. [tools/check_cost_model.py](tools/check_cost_model.py)
-re-checks it against any painted export and its G-code.
+The figure counts **only the time spent changing tools**, not the whole print:
+extrusion time depends on a print profile this bundle knows nothing about.
+
+Two measured numbers sit behind it. A tool change on an Original Prusa XL at
+0.20 mm costs **18.4 s** — fitted from slicing the same scene at eight
+different colour counts, worst point 4.1% off the line
+([tools/calibrate_time.py](tools/calibrate_time.py) re-measures it; an MMU
+that rewinds and purges is much slower). And tool changes themselves are
+estimated as extruders-per-layer less one, summed over layers, which matches
+real G-code within ~1%.
+
+Colours beyond the printer's tool count add no time at all, because they print
+with filament 1 — the same behaviour probe I found, visible in the ladder as
+the plateau past 5. Use `tools N` if your printer differs.
+
+[tools/check_time_model.py](tools/check_time_model.py) re-checks the whole
+chain against the calibration runs.
 
 ## Layout
 

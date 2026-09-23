@@ -15,22 +15,68 @@ estimated against 811 actual tool changes, within 1%.
 from numpy import add, arange, cumsum, floor, int32, maximum, minimum, zeros
 
 DEFAULT_LAYER_HEIGHT = 0.2
+
+# Measured, not guessed: tools/calibrate_time.py exports the same scene at
+# several colour counts, slices each, and fits print time against tool
+# changes.  On an Original Prusa XL with a 0.20 mm profile the slope was 18.4
+# seconds per change, with the worst point 4.1% off the fit.  Other printers
+# differ - an MMU rewinds and purges far more slowly than a toolchanger - so
+# this is an order-of-magnitude figure for comparing choices, not a quote.
+SECONDS_PER_TOOL_CHANGE = 18.4
+
+# Colours beyond the printer's tool count do not add tool changes: they all
+# print with filament 1 (see probes/RESULTS.md, probe I).
+DEFAULT_TOOL_COUNT = 5
 # a region under this share of the model's area is "small"
 SMALL_AREA_FRACTION = 0.02
 # ...and costly if it also drives at least this share of the tool changes
 COSTLY_CHANGE_FRACTION = 0.05
 
 
+def effective_extruders(labels, tools=DEFAULT_TOOL_COUNT):
+    """Map colour regions to the extruders a printer will really use.
+
+    Region r is painted as extruder r+1.  A printer with fewer tools prints
+    everything above its tool count with filament 1, so those regions stop
+    costing tool changes - which is why print time plateaus once there are
+    more colours than tools.
+    """
+    from numpy import where
+    extruder = labels + 1
+    return where(extruder > tools, 1, extruder)
+
+
+def seconds_to_text(seconds):
+    seconds = int(round(seconds))
+    if seconds < 60:
+        return "%ds" % seconds
+    if seconds < 3600:
+        return "%dm" % (seconds // 60)
+    return "%dh %02dm" % (seconds // 3600, (seconds % 3600) // 60)
+
+
 class PrintCost:
 
     def __init__(self, layer_height, n_layers, layers_touched, tool_changes,
-                 savings, area_fractions):
+                 savings, area_fractions, tools=DEFAULT_TOOL_COUNT):
         self.layer_height = layer_height
         self.n_layers = n_layers
         self.layers_touched = layers_touched      # per region
         self.tool_changes = tool_changes          # total estimate
         self.savings = savings                    # changes saved per region
         self.area_fractions = area_fractions      # per region, 0..1
+        self.tools = tools
+
+    @property
+    def seconds(self):
+        """Print time spent changing tools, not the whole print."""
+        return self.tool_changes * SECONDS_PER_TOOL_CHANGE
+
+    def time_text(self):
+        return seconds_to_text(self.seconds)
+
+    def saving_text(self, region):
+        return seconds_to_text(self.savings[region] * SECONDS_PER_TOOL_CHANGE)
 
     def costly_regions(self):
         """Regions that cost far more to print than they cover.
@@ -94,53 +140,52 @@ def regroup_presence(presence, group_of_row, n_groups):
     return out
 
 
-def estimate(geometry, regions, layer_height=DEFAULT_LAYER_HEIGHT):
+def estimate(geometry, regions, layer_height=DEFAULT_LAYER_HEIGHT,
+             tools=DEFAULT_TOOL_COUNT):
     """Estimate the tool changes the given colour regions would cause.
 
     The geometry must already be scaled to millimetres, since the layer count
     depends on how tall the print is.
     """
-    verts, tris = geometry.vertices, geometry.triangles
     labels = regions.labels
     n_regions = regions.count
 
-    if len(tris) == 0 or layer_height <= 0:
+    if len(geometry.triangles) == 0 or layer_height <= 0:
         return PrintCost(layer_height, 0, zeros(n_regions, int32), 0,
-                         zeros(n_regions, int32), zeros(n_regions))
+                         zeros(n_regions, int32), zeros(n_regions), tools)
 
-    z = verts[:, 2]
-    tri_z = z[tris]
-    low = floor(tri_z.min(axis=1) / layer_height).astype(int32)
-    high = floor(tri_z.max(axis=1) / layer_height).astype(int32)
-    n_layers = int(high.max()) + 1
+    presence = layer_presence(geometry, labels, n_regions, layer_height)
+    n_layers = presence.shape[1]
+    layers_touched = presence.sum(axis=1).astype(int32)
 
-    presence = zeros((n_regions, n_layers), dtype=bool)
-    for r in range(n_regions):
-        in_region = labels == r
-        if not in_region.any():
-            continue
-        diff = zeros(n_layers + 1, dtype=int32)
-        add.at(diff, low[in_region], 1)
-        add.at(diff, minimum(high[in_region] + 1, n_layers), -1)
-        presence[r] = cumsum(diff)[:n_layers] > 0
-
-    per_layer = presence.sum(axis=0)
+    # what the printer really does: colours beyond the tool count share
+    # filament 1, so they cost nothing extra
+    extruder = effective_extruders(arange(n_regions), tools)
+    n_extruders = int(extruder.max()) + 1
+    by_extruder = regroup_presence(presence, extruder, n_extruders)
+    per_layer = by_extruder.sum(axis=0)
     tool_changes = int(maximum(per_layer - 1, 0).sum())
 
-    # dropping a region saves a change in every layer where it shares the
-    # layer with at least one other region
+    # dropping a region saves a change in each layer where its extruder is
+    # present only because of that region, alongside at least one other
+    savings = zeros(n_regions, dtype=int32)
     shared = per_layer >= 2
-    savings = (presence & shared).sum(axis=1).astype(int32)
-    layers_touched = presence.sum(axis=1).astype(int32)
+    for r in range(n_regions):
+        siblings = (extruder == extruder[r]) & (arange(n_regions) != r)
+        alone = presence[r] & ~presence[siblings].any(axis=0) \
+            if siblings.any() else presence[r]
+        savings[r] = int((alone & shared).sum())
 
     total_area = float(regions.areas.sum()) or 1.0
     area_fractions = regions.areas / total_area
 
     return PrintCost(layer_height, n_layers, layers_touched, tool_changes,
-                     savings, area_fractions)
+                     savings, area_fractions, tools)
 
 
 def describe(cost):
     """One line summarising the whole print."""
-    return ("%d layers at %.2f mm, roughly %d tool changes"
-            % (cost.n_layers, cost.layer_height, cost.tool_changes))
+    return ("%d layers at %.2f mm, about %s spent changing tools "
+            "(%d changes on a %d-tool printer)"
+            % (cost.n_layers, cost.layer_height, cost.time_text(),
+               cost.tool_changes, cost.tools))
