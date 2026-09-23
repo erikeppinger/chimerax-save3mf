@@ -37,6 +37,9 @@ SLIC3RPE_NS = "http://schemas.slic3r.org/3mf/2017/06"
 MMU_CODES = ["0", "4", "8", "0C", "1C", "2C", "3C", "4C", "5C", "6C", "7C",
              "8C", "9C", "AC", "BC", "CC"]
 MAX_PAINTED_EXTRUDERS = len(MMU_CODES) - 1
+# more tools than this and the printer is unusual; past it, warn that surplus
+# colours are silently printed with filament 1
+COMMON_TOOL_COUNT = 5
 
 FLAVORS = ("prusa", "bambu", "generic")
 
@@ -107,7 +110,8 @@ def write_3mf(session, path, models=None, scale=None, size=None, check=True,
 
     _write_package(path, model_xml, extra)
 
-    _report(session, path, geometry, used_scale, before, regions, flavor)
+    _report(session, path, geometry, used_scale, before, regions, flavor,
+            painting)
     printcheck.log_report(session, report, quiet=not check)
 
 
@@ -425,7 +429,7 @@ def _xml_escape(text):
 
 
 def _report(session, path, geometry, used_scale, triangles_before_weld,
-            regions, flavor):
+            regions, flavor, painting=False):
     import os
     low, high = geometry.bounds()
     span = high - low
@@ -453,6 +457,15 @@ def _report(session, path, geometry, used_scale, triangles_before_weld,
     from .colors import MAX_REGIONS_BEFORE_WARNING, log_palette
     log_palette(session, regions.names, regions.hex_colors(alpha=False),
                 regions.counts, regions.areas)
+
+    if painting and regions.count > COMMON_TOOL_COUNT:
+        session.logger.warning(
+            "Painted as extruders 1-%d. A printer with fewer tools prints "
+            "every surplus color with filament 1 and says nothing about it - "
+            "on a %d-tool printer, colors %d-%d here would all come out as "
+            "filament 1. Use 'maxColors N' to match your printer."
+            % (regions.count, COMMON_TOOL_COUNT, COMMON_TOOL_COUNT + 1,
+               regions.count))
 
     if regions.count > MAX_REGIONS_BEFORE_WARNING:
         session.logger.warning(

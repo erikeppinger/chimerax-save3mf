@@ -144,3 +144,21 @@ object per colour region inside a wrapper object, with
 & "C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer-console.exe" --export-3mf --dont-arrange -o probes\roundtrip\rt.3mf probes\probe_E_combined.3mf
 & "C:\Program Files\ChimeraX 1.12\bin\python.exe" tools\inspect_3mf.py probes\roundtrip\rt.3mf
 ```
+
+## Probe I: extruders above the printer's tool count (tested 2026-09-23)
+
+A file can paint more extruders than the printer has tools. Eight stacked
+slabs of heights 2..16 mm were painted extruders 1..8 and sliced on the
+5-tool XL profile, then the G-code was read back to see which tool actually
+printed each slab:
+
+| painted extruder | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| tool used | 0 | 1 | 2 | 3 | 4 | **0** | **0** | **0** |
+
+Surplus colours do **not** wrap around modulo the tool count — they all
+collapse onto filament 1, silently. Filament usage confirms it:
+`14.87, 1.95, 2.85, 3.74, 4.64`, where extruders 2-5 track their slab volumes
+(4:6:8:10) exactly and extruder 1 absorbs everything above the tool count.
+
+The exporter therefore warns whenever more than 5 regions are painted.
