@@ -5,12 +5,17 @@ build-backend = "chimerax.bundle_builder.cx_pep517"
 [project]
 name = "ChimeraX-Save3MF"
 version = "0.1.0"
-description = "Save ChimeraX scenes as 3MF files for 3D printing"
+description = "Save ChimeraX scenes as 3MF files for 3D printing, with colors carried through as painted extruders"
 authors = [{ name = "Erik Eppinger" }]
-license = { text = "Free for non-commercial use" }
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = ["ChimeraX-Core >=1.9"]
 dynamic = ["classifiers"]
+
+[project.urls]
+Repository = "https://github.com/ErikEppinger/chimerax-save3mf"
+Issues = "https://github.com/ErikEppinger/chimerax-save3mf/issues"
 
 [project.readme]
 content-type = "text/markdown"
@@ -19,8 +24,16 @@ Adds 3MF to the formats ChimeraX can save, for 3D printing:
 
     save molecule.3mf size 80
 
-The scene is written as it is displayed.  Colours are preserved as separate
-printable parts so a slicer can assign a filament to each one.
+The scene is written as it is displayed, and the colors you set up in ChimeraX
+are carried through as painted extruders, so a multi-material slicer opens the
+file with each chain or region already assigned to its own filament.
+
+Also reports what a slicer will make of the geometry before you print it:
+disconnected pieces, meshes that are not watertight, geometry sealed invisibly
+inside other geometry, and how much print time each color costs.
+
+Developed with AI assistance (Claude); every format decision was verified
+against PrusaSlicer, Bambu Studio and OrcaSlicer.
 """
 
 [chimerax]

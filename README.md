@@ -1,33 +1,55 @@
 # ChimeraX-Save3MF
 
-A ChimeraX bundle that saves the current scene as a **3MF** file for 3D printing,
-preserving the colouring you set up in ChimeraX as separately assignable parts
-in the slicer.
+Save a ChimeraX scene as a **3MF** file for 3D printing, with the colours you
+set up in ChimeraX carried through as painted extruders — so a multi-material
+slicer opens the file with each chain already assigned to its own filament.
 
 ```
 save molecule.3mf size 80
 ```
 
-Status: **complete through phase 5** — geometry, colour painting, printability
-and print-cost reporting, Save-dialog options, docs, and a full test suite
-verified against PrusaSlicer, Bambu Studio and OrcaSlicer.
+It also tells you what a slicer will make of the geometry *before* you print:
+disconnected pieces, meshes that are not watertight, geometry sealed
+invisibly inside other geometry, and what each colour costs in print time.
+
+Verified end to end against **PrusaSlicer**, **Bambu Studio** and
+**OrcaSlicer**: the exports load, keep their painting through a round trip,
+and slice with one filament per chain.
+
+> **Built with AI assistance.** This bundle was written by Claude (Anthropic)
+> working with Erik Eppinger, and every commit carries a `Co-Authored-By`
+> trailer saying so. The file-format decisions were not taken from
+> documentation — 3MF colour handling is barely documented and the published
+> encoding tables are wrong — but established by experiment against the three
+> slicers, with the probe files and results kept in
+> [`probes/`](probes/RESULTS.md) so anyone can re-run them. The print-time
+> figures are measured, and [the test suite](#testing) is itself checked by
+> mutation. Please still read the code before trusting it with a nine-hour
+> print.
 
 ## Install
 
+Requires ChimeraX 1.9 or later (developed against 1.12). Clone the repository,
+then from the ChimeraX command line:
+
 ```
-devel install C:\Users\Erik\Desktop\chimerax-3mf
+cd /path/to/chimerax-save3mf
+devel install /path/to/chimerax-save3mf
 ```
 
 or headless:
 
-```
-& "C:\Program Files\ChimeraX 1.12\bin\ChimeraX-console.exe" --nogui --exit --cmd "devel install C:\Users\Erik\Desktop\chimerax-3mf exit true"
+```bash
+& "C:\Program Files\ChimeraX 1.12\bin\ChimeraX-console.exe" --nogui --exit --cmd "devel install . exit true"
 ```
 
-**Run it from the bundle directory.** `devel install` copies the documentation
-files relative to the *process* working directory rather than the bundle path,
-so from anywhere else the build fails and leaves an empty `src/docs` tree
-wherever it was launched.
+**Run it from the bundle directory** — note the `cd` above. `devel install`
+resolves the documentation file globs against the *process* working directory
+rather than the bundle path, so from anywhere else the wheel build fails and
+leaves an empty `src/docs` tree wherever it was launched.
+
+A prebuilt wheel can be made with `devel build` and installed with
+`toolshed install <wheel>`.
 
 ## Command
 
@@ -238,3 +260,7 @@ Preparing a structure for printing (struts between disjoint pieces, thickened
 ribbons, solvent removal) is what the
 [NIH 3D print presets](https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxnihpresets)
 bundle is for. The exporter just tells you when you need it.
+
+## Licence
+
+[MIT](LICENSE). ChimeraX itself is separately licensed by UCSF.
