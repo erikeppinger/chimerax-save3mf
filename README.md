@@ -8,7 +8,8 @@ in the slicer.
 save molecule.3mf size 80
 ```
 
-Status: **phase 1 complete** — geometry export works. Colour regions land in
+Status: **phase 2 complete** — geometry and colour parts both work, verified
+end to end in PrusaSlicer, Bambu Studio and OrcaSlicer.
 phase 2.
 
 ## Install
@@ -26,14 +27,37 @@ or headless:
 ## Command
 
 ```
-save PATH.3mf [models SPEC] [scale N] [size N]
+save PATH.3mf [models SPEC] [scale N] [size N] [colors true|false]
+              [maxColors N] [flavor prusa|bambu|generic] [check true|false]
 ```
 
 - `models` — which models to export; default is everything displayed
 - `scale` — millimetres per Ångström (default 1.0)
 - `size` — scale so the longest edge is N mm; overrides `scale`
+- `colors` — split the model into one part per colour (default true)
+- `maxColors` — merge down to at most N parts; default is no merging
+- `flavor` — which slicer the part structure targets (default `prusa`)
+- `check` — run the printability check (default true)
 
-The model is centred in x/y and sits with its lowest point at z = 0.
+The model sits in the positive octant with its lowest point at z = 0.
+Coordinates must not go negative or slicers place the model off the bed.
+
+### Colours become printable parts
+
+Each distinct colour in the scene becomes a separate part with a pre-assigned
+extruder, named after the drawing and the colour — `1a3n_A SES surface medium
+slate blue` — so a slicer's part list says which chain is which.
+
+Continuous colouring (rainbow, by B-factor) can produce hundreds of distinct
+colours. `maxColors N` clusters them in CIELAB, weighted by triangle area, and
+reports the mean colour shift:
+
+```
+526 distinct colors merged into 5 printable parts (mean color shift ΔE 16.6)
+```
+
+Each part's colour is always a real colour from the scene, never an averaged
+one.
 
 ## Layout
 
@@ -63,7 +87,7 @@ Use ChimeraX's bundled interpreter as above.
 PrusaSlicer, Bambu Studio and OrcaSlicer disagree about how multi-part colour
 information is carried in 3MF, and no single file satisfies all of them. See
 [probes/RESULTS.md](probes/RESULTS.md) — the exporter will grow a `flavor`
-option in phase 2.
+option, which is what `flavor` selects.
 
 ## Printability check
 

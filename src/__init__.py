@@ -17,12 +17,18 @@ class _Save3MFAPI(BundleAPI):
 
             @property
             def save_args(self):
-                from chimerax.core.commands import BoolArg, FloatArg, ModelsArg
+                from chimerax.core.commands import (
+                    BoolArg, EnumOf, FloatArg, ModelsArg, PositiveIntArg,
+                )
+                from .writer3mf import FLAVORS
                 return {
                     'models': ModelsArg,
                     'scale': FloatArg,
                     'size': FloatArg,
                     'check': BoolArg,
+                    'colors': BoolArg,
+                    'max_colors': PositiveIntArg,
+                    'flavor': EnumOf(FLAVORS),
                 }
 
         return Info()

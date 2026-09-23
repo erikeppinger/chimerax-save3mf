@@ -16,17 +16,24 @@ from numpy import (
 class SceneGeometry:
     """Triangles of the displayed scene, with a colour for each triangle.
 
-    vertices        (nv, 3) float32, scene coordinates
-    triangles       (nt, 3) int32, indices into vertices
-    triangle_colors (nt, 4) uint8 RGBA
-    sources         list of (drawing name, triangle count), for reporting
+    vertices         (nv, 3) float32, scene coordinates
+    triangles        (nt, 3) int32, indices into vertices
+    triangle_colors  (nt, 4) uint8 RGBA
+    triangle_sources (nt,) int32, index into source_names
+    sources          list of (drawing name, triangle count), for reporting
     """
 
-    def __init__(self, vertices, triangles, triangle_colors, sources):
+    def __init__(self, vertices, triangles, triangle_colors, sources,
+                 triangle_sources=None):
         self.vertices = vertices
         self.triangles = triangles
         self.triangle_colors = triangle_colors
         self.sources = sources
+        self.triangle_sources = triangle_sources
+
+    @property
+    def source_names(self):
+        return [name for name, _ in self.sources]
 
     @property
     def triangle_count(self):
@@ -119,18 +126,21 @@ def _triangle_colors(vertex_colors, triangles):
 
 
 def _combine(pieces, sources):
-    vertex_arrays, triangle_arrays, color_arrays = [], [], []
+    from numpy import full
+    vertex_arrays, triangle_arrays, color_arrays, source_arrays = [], [], [], []
     offset = 0
-    for va, ta, ca in pieces:
+    for i, (va, ta, ca) in enumerate(pieces):
         vertex_arrays.append(va)
         triangle_arrays.append(ta + offset)
         color_arrays.append(ca)
+        source_arrays.append(full(len(ta), i, dtype=int32))
         offset += len(va)
     return SceneGeometry(
         concatenate(vertex_arrays),
         concatenate(triangle_arrays),
         concatenate(color_arrays),
         sources,
+        concatenate(source_arrays),
     )
 
 
@@ -155,8 +165,10 @@ def weld_vertices(geometry, tolerance=1e-4):
     keep = ((new_triangles[:, 0] != new_triangles[:, 1]) &
             (new_triangles[:, 1] != new_triangles[:, 2]) &
             (new_triangles[:, 0] != new_triangles[:, 2]))
+    sources = geometry.triangle_sources
     return SceneGeometry(new_vertices.astype(float32), new_triangles[keep],
-                         geometry.triangle_colors[keep], geometry.sources)
+                         geometry.triangle_colors[keep], geometry.sources,
+                         None if sources is None else sources[keep])
 
 
 def _log10(x):
@@ -165,7 +177,12 @@ def _log10(x):
 
 
 def place_for_printing(geometry, scale=1.0, size=None):
-    """Scale to millimetres and sit the model on the build plate.
+    """Scale to millimetres and sit the model in the positive octant.
+
+    Coordinates must not go negative: a slicer loading a 3MF without its own
+    placement config takes them literally, and anything at negative x or y is
+    off the build plate.  The model is moved so its bounding box starts at
+    the origin, with its lowest point at z = 0.
 
     scale  millimetres per Angstrom (ChimeraX scene units)
     size   if given, scale so the longest edge of the bounding box is this
@@ -181,10 +198,8 @@ def place_for_printing(geometry, scale=1.0, size=None):
         longest = float(span.max())
         scale = (size / longest) if longest > 0 else 1.0
 
-    v = (v - low) * scale            # origin at the bounding-box corner
-    span = span * scale
-    v[:, 0] -= span[0] / 2.0         # centre in x and y, bottom at z = 0
-    v[:, 1] -= span[1] / 2.0
+    v = (v - low) * scale            # bounding-box corner at the origin
 
     return SceneGeometry(v.astype(float32), geometry.triangles,
-                         geometry.triangle_colors, geometry.sources), scale
+                         geometry.triangle_colors, geometry.sources,
+                         geometry.triangle_sources), scale
