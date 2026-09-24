@@ -120,6 +120,12 @@ post without re-running the probes.
 - **Verify against the slicers, not assumptions.** Every format claim in this
   repository was checked by round-tripping through PrusaSlicer, Bambu Studio
   and OrcaSlicer CLIs, and the important ones by slicing to G-code.
+- **Help topics need the `help:` prefix.** `help 3mf` works (ChimeraX derives
+  `help:user/commands/3mf.html` from the command's first word), and so does
+  `open help:user/commands/3mf.html`, but a bare path is read as a command
+  name and reports "No help found". Bundle commands do not appear in Help →
+  User Guide's index in 1.12: the injection looks for a `<div id="clist">`
+  that the shipped index page lacks.
 
 ## Testing philosophy
 

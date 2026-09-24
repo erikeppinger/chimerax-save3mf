@@ -51,6 +51,26 @@ leaves an empty `src/docs` tree wherever it was launched.
 A prebuilt wheel can be made with `devel build` and installed with
 `toolshed install <wheel>`.
 
+## Documentation inside ChimeraX
+
+The bundle installs a help page. Reach it with:
+
+```
+help 3mf
+```
+
+or `help 3mf palette` to land on that command's section, or
+`open help:user/commands/3mf.html` for the page directly.
+
+Note the `help:` prefix in the last form: without it ChimeraX reads the
+argument as a command name and reports "No help found".
+
+The page is **not** listed in Help → User Guide's command index. That is a
+ChimeraX limitation rather than a packaging fault — the code that adds bundle
+commands to that index looks for a `<div id="clist">` which 1.12's index page
+does not contain, so no bundle's commands appear there. `help 3mf` is the
+route that works.
+
 ## Command
 
 ```
