@@ -4,13 +4,19 @@ build-backend = "chimerax.bundle_builder.cx_pep517"
 
 [project]
 name = "ChimeraX-Save3MF"
-version = "0.1.0"
+version = "0.1.1"
 description = "Save ChimeraX scenes as 3MF files for 3D printing, with colors carried through as painted extruders"
 authors = [{ name = "Erik Eppinger" }]
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-dependencies = ["ChimeraX-Core >=1.9"]
+dependencies = [
+    "ChimeraX-Core ~=1.9",
+    # chimerax.save_command is its own bundle, not part of Core
+    "ChimeraX-SaveCommand ~=1.0",
+    # registers the "data formats" manager this bundle provides 3MF to
+    "ChimeraX-DataFormats ~=1.0",
+]
 dynamic = ["classifiers"]
 
 [project.urls]
