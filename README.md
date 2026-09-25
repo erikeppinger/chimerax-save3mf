@@ -8,9 +8,11 @@ slicer opens the file with each chain already assigned to its own filament.
 save molecule.3mf size 80
 ```
 
-It also tells you what a slicer will make of the geometry *before* you print:
-disconnected pieces, meshes that are not watertight, geometry sealed
-invisibly inside other geometry, and what each colour costs in print time.
+It also tells you what a slicer will make of the geometry *before* you print —
+how many objects it will really produce, which bits are interior cavities,
+which are genuinely loose, and what each colour costs in print time. ChimeraX
+scenes are built from abutting and overlapping surfaces rather than one
+stitched mesh, and the report is written around that.
 
 Verified end to end against **PrusaSlicer**, **Bambu Studio** and
 **OrcaSlicer**: the exports load, keep their painting through a round trip,
@@ -26,6 +28,20 @@ and slice with one filament per chain.
 > figures are measured, and [the test suite](#testing) is itself checked by
 > mutation. Please still read the code before trusting it with a nine-hour
 > print.
+
+## Which printer is this for?
+
+Both kinds, but they need different files — pick with `flavor`:
+
+| Your printer | Use | What the file carries |
+|---|---|---|
+| **Multi-filament** (MMU, toolchanger, AMS) | `flavor prusa` (default) or `flavor bambu` | each colour painted onto the triangles as an extruder assignment, up to 15 |
+| **Full colour** (inkjet, binder jet, PolyJet) | `flavor fullcolor` | a colour at every vertex, interpolated across each triangle — continuous colouring such as `mlp` or B-factor survives intact |
+| **Single filament** | any, colour is simply ignored | plain geometry |
+
+`flavor fullcolor` has no colour limit and does no clustering: it writes the
+scene's colours as they are. The older name `generic` still works and means
+the same thing.
 
 ## Install
 
@@ -75,7 +91,7 @@ route that works.
 
 ```
 save PATH.3mf [models SPEC] [scale N] [size N] [colors true|false]
-              [maxColors N] [flavor prusa|bambu|generic] [paint true|false]
+              [maxColors N] [flavor prusa|bambu|fullcolor] [paint true|false]
               [check true|false]
 ```
 
@@ -84,7 +100,7 @@ save PATH.3mf [models SPEC] [scale N] [size N] [colors true|false]
 - `size` — scale so the longest edge is N mm; overrides `scale`
 - `colors` — carry the scene's colours into the file (default true)
 - `maxColors` — merge down to at most N colours; default is no merging
-- `flavor` — which slicer the file targets (default `prusa`)
+- `flavor` — what kind of printer the file is for (default `prusa`)
 - `paint` — paint extruders per triangle (default), or `false` to split the
   mesh into named parts instead
 - `check` — run the printability check (default true)
@@ -108,10 +124,13 @@ reports the mean colour shift:
 
 Each colour is always a real colour from the scene, never an averaged one.
 
-Two limits worth knowing. A slicer can paint at most **15** extruders; above
-that the exporter splits the mesh into parts instead and says so. And a file
-can paint more extruders than your printer has tools — the surplus then prints
-with filament 1 and the slicer says nothing, so the exporter warns above five.
+Two limits worth knowing, both specific to **filament** printers. A slicer can
+paint at most **15** extruders; above that the exporter splits the mesh into
+parts instead and says so. And a file can paint more extruders than your
+printer has tools — the surplus then prints with filament 1 and the slicer
+says nothing, so the exporter warns above five.
+
+Neither applies to `flavor fullcolor`, which writes every colour as it is.
 
 ### Choosing the part count before exporting
 
@@ -253,28 +272,52 @@ above 15 colours, which is the most a slicer can paint.
 
 ## Printability check
 
-Every export runs a check and reports problems to the log. It never modifies
-geometry; pass `check false` to silence it.
+Every export reports what a slicer will make of the geometry. It never modifies
+anything; pass `check false` to silence it.
 
-- **disconnected pieces** — whether the model is one body, or loose fragments
-  (waters, ions) around a solid one
-- **not watertight** — open or non-manifold edges, which slicers will try to
-  repair unpredictably
-- **sealed-in geometry** — pieces fully enclosed inside another piece, which
-  print but can never be seen
-- **thin features** — pieces below what a 0.4 mm nozzle can hold
+**ChimeraX scenes are almost never stitched together**, and the report is built
+around that fact. A ribbon is a separate surface per helix, strand and coil;
+atoms are separate spheres; bond cylinders are open-ended tubes. These abut or
+overlap instead of sharing vertices, so counting *topologically* separate
+surfaces says nothing useful — a plain ribbon would look like "20 pieces that
+do not touch" when it is one solid object.
 
-The sealed-in check is worth the most in practice. ChimeraX shows cartoon by
-default, so adding a surface on top leaves the ribbon inside it — invisible in
-the print, but still sliced:
+What is measured instead:
+
+- **Printed bodies** — surfaces that come within about an extrusion width fuse
+  in the print, so they are counted as one body however the mesh is built.
+  600 overlapping atom spheres are one object, and the report says so.
+- **Interior cavities** — a closed surface wound inside-out bounds a void, not
+  a solid. Density-map surfaces routinely contain them. Slicers fill what lies
+  inside an odd number of surfaces, so a cavity simply stays hollow; it is not
+  a loose fragment and costs no filament.
+- **Genuinely loose pieces** — only geometry that touches nothing else, such
+  as a water or an ion sitting in space, is reported as printing separately.
+- **Open surfaces** — reported as a fact with its usual cause, not as an
+  alarm: bond cylinders have no end caps and clipped surfaces are cut open.
+- **Extreme sizes and thin features** — below what a 0.4 mm nozzle can hold,
+  or larger than most build plates.
+
+For example, a plain ribbon now reads:
 
 ```
-47 pieces (240628 triangles, 30% of the model) are sealed inside another piece
-and will never be visible, but still cost print time and filament.
+One connected body, built from 20 separate surfaces that touch or overlap.
+ChimeraX draws ribbons, atoms and bonds as separate pieces; a slicer fuses
+anything closer than about 0.4 mm, so this prints as one object.
 ```
 
-On 1a3n that is 814k triangles and 9.6 MB versus 538k and 6.3 MB after
-`hide cartoon` — a third of the print, for nothing.
+and a density map with internal voids:
+
+```
+One connected body; it will print as one object.
+3 interior cavities (surfaces wound inside-out, such as voids in a density
+map). Slicers leave these hollow; they cost no filament.
+```
+
+Still worth watching: ChimeraX shows cartoon by default, so adding a surface
+leaves the ribbon sealed inside it. That geometry is invisible in the print
+and still gets sliced — on 1a3n, 814k triangles and 9.6 MB versus 538k and
+6.3 MB after `hide cartoon`.
 
 Preparing a structure for printing (struts between disjoint pieces, thickened
 ribbons, solvent removal) is what the

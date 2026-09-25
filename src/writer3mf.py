@@ -41,7 +41,10 @@ MAX_PAINTED_EXTRUDERS = len(MMU_CODES) - 1
 # colours are silently printed with filament 1
 COMMON_TOOL_COUNT = 5
 
-FLAVORS = ("prusa", "bambu", "generic")
+FLAVORS = ("prusa", "bambu", "fullcolor", "generic")
+
+# "generic" was the 0.1.x name for what is really full-colour output
+FLAVOR_ALIASES = {"generic": "fullcolor"}
 
 CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -72,6 +75,7 @@ def write_3mf(session, path, models=None, scale=None, size=None, check=True,
     if flavor not in FLAVORS:
         raise UserError("Unknown 3MF flavor '%s'; use one of: %s"
                         % (flavor, ", ".join(FLAVORS)))
+    flavor = FLAVOR_ALIASES.get(flavor, flavor)
 
     geometry = scene.collect_geometry(session, models)
     if geometry.triangle_count == 0:
@@ -84,6 +88,16 @@ def write_3mf(session, path, models=None, scale=None, size=None, check=True,
         geometry, scale=1.0 if scale is None else scale, size=size)
 
     report = printcheck.analyze(geometry)
+
+    # Full colour is a different job from filament assignment: a full-colour
+    # printer wants the colour of every vertex, not a handful of regions, so
+    # none of the clustering or extruder machinery applies.
+    if flavor == "fullcolor":
+        model_xml, extra = _fullcolor_package(session, geometry, colors)
+        _write_package(path, model_xml, extra)
+        _report_fullcolor(session, path, geometry, used_scale, before, colors)
+        printcheck.log_report(session, report, quiet=not check)
+        return
 
     regions = None
     if colors:
@@ -182,6 +196,90 @@ def _write_color_resources(out, regions):
     for hex_color in regions.hex_colors():
         out.write('   <m:color color="%s"/>\n' % hex_color)
     out.write('  </m:colorgroup>\n')
+
+
+# ------------------------------------------------------- full-colour flavour
+
+def _fullcolor_package(session, geometry, colors=True):
+    """One mesh carrying a colour at every vertex.
+
+    This is what a full-colour printer (inkjet, binder jet, PolyJet) and a 3MF
+    viewer want: colour interpolated across each triangle rather than a few
+    flat regions. Written with the Materials extension colorgroup, which is
+    the standard place for vertex colour in 3MF.
+    """
+    from numpy import savetxt, column_stack, unique
+
+    vertex_colors = geometry.vertex_colors if colors else None
+    out = io.StringIO()
+    _model_header(session, out)
+    out.write(' <resources>\n')
+
+    color_index = None
+    if vertex_colors is not None and len(vertex_colors):
+        palette, color_index = unique(vertex_colors[:, :3], axis=0,
+                                      return_inverse=True)
+        color_index = color_index.ravel()
+        out.write('  <m:colorgroup id="%d">\n' % COLORGROUP_ID)
+        for rgb in palette:
+            out.write('   <m:color color="#%02X%02X%02XFF"/>\n'
+                      % (int(rgb[0]), int(rgb[1]), int(rgb[2])))
+        out.write('  </m:colorgroup>\n')
+        # a default at object level as well: some readers only look there
+        obj_attrs = ' pid="%d" pindex="0"' % COLORGROUP_ID
+    else:
+        obj_attrs = ''
+
+    out.write('  <object id="%d" type="model" name="%s"%s>\n'
+              % (WRAPPER_OBJECT_ID, _scene_name(session), obj_attrs))
+    out.write('   <mesh>\n')
+    out.write('    <vertices>\n')
+    _write_vertices(out, geometry.vertices)
+    out.write('    </vertices>\n')
+    out.write('    <triangles>\n')
+    if color_index is None:
+        _write_triangles(out, geometry.triangles, None)
+    else:
+        rows = column_stack((geometry.triangles,
+                             color_index[geometry.triangles]))
+        savetxt(out, rows,
+                fmt='     <triangle v1="%d" v2="%d" v3="%d" '
+                    'pid="' + str(COLORGROUP_ID) + '" p1="%d" p2="%d" p3="%d"/>')
+    out.write('    </triangles>\n')
+    out.write('   </mesh>\n')
+    out.write('  </object>\n')
+    out.write(' </resources>\n')
+    out.write(' <build>\n')
+    out.write('  <item objectid="%d" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>\n'
+              % WRAPPER_OBJECT_ID)
+    out.write(' </build>\n')
+    out.write('</model>\n')
+    return out.getvalue(), {}
+
+
+def _report_fullcolor(session, path, geometry, used_scale, before, colors):
+    import os
+    from numpy import unique
+    low, high = geometry.bounds()
+    span = high - low
+    session.logger.info(
+        "Saved %s: %d triangles, %d vertices, %.1f x %.1f x %.1f mm "
+        "(scale %.4f mm/\N{ANGSTROM SIGN}), %.1f MB%s"
+        % (os.path.basename(path), geometry.triangle_count,
+           geometry.vertex_count, span[0], span[1], span[2], used_scale,
+           os.path.getsize(path) / (1024.0 * 1024.0),
+           "" if before == geometry.triangle_count
+           else ", %d degenerate triangles removed"
+                % (before - geometry.triangle_count)))
+    if colors and geometry.vertex_colors is not None:
+        distinct = len(unique(geometry.vertex_colors[:, :3], axis=0))
+        session.logger.info(
+            "Full colour: %d distinct vertex colours written, interpolated "
+            "across each triangle. For full-colour printers (inkjet, binder "
+            "jet, PolyJet) and 3MF viewers; filament printers ignore this and "
+            "print one colour." % distinct)
+    else:
+        session.logger.info("Geometry only, no colour.")
 
 
 # --------------------------------------------------------- painted flavour

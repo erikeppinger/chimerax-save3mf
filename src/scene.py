@@ -18,18 +18,21 @@ class SceneGeometry:
 
     vertices         (nv, 3) float32, scene coordinates
     triangles        (nt, 3) int32, indices into vertices
-    triangle_colors  (nt, 4) uint8 RGBA
+    triangle_colors  (nt, 4) uint8 RGBA, averaged over each triangle
+    vertex_colors    (nv, 4) uint8 RGBA, kept unaveraged for full-colour
+                     output, where smooth colour is the whole point
     triangle_sources (nt,) int32, index into source_names
     sources          list of (drawing name, triangle count), for reporting
     """
 
     def __init__(self, vertices, triangles, triangle_colors, sources,
-                 triangle_sources=None):
+                 triangle_sources=None, vertex_colors=None):
         self.vertices = vertices
         self.triangles = triangles
         self.triangle_colors = triangle_colors
         self.sources = sources
         self.triangle_sources = triangle_sources
+        self.vertex_colors = vertex_colors
 
     @property
     def source_names(self):
@@ -121,6 +124,7 @@ def _drawing_geometry(d):
     out_v = empty((ni * nv, 3), float32)
     out_t = empty((ni * nt, 3), int32)
     out_c = empty((ni * nt, 4), uint8)
+    out_vc = empty((ni * nv, 4), uint8)
 
     ta32 = ta.astype(int32)
     for i, place in enumerate(positions):
@@ -128,10 +132,12 @@ def _drawing_geometry(d):
         out_t[i * nt:(i + 1) * nt] = ta32 + i * nv
         if vertex_colors is not None:
             out_c[i * nt:(i + 1) * nt] = _triangle_colors(vertex_colors, ta)
+            out_vc[i * nv:(i + 1) * nv] = vertex_colors
         else:
             out_c[i * nt:(i + 1) * nt] = instance_colors[i]
+            out_vc[i * nv:(i + 1) * nv] = instance_colors[i]
 
-    return out_v, out_t, out_c
+    return out_v, out_t, out_c, out_vc
 
 
 def _triangle_colors(vertex_colors, triangles):
@@ -143,12 +149,14 @@ def _triangle_colors(vertex_colors, triangles):
 
 def _combine(pieces, sources):
     from numpy import full
-    vertex_arrays, triangle_arrays, color_arrays, source_arrays = [], [], [], []
+    vertex_arrays, triangle_arrays, color_arrays = [], [], []
+    source_arrays, vcolor_arrays = [], []
     offset = 0
-    for i, (va, ta, ca) in enumerate(pieces):
+    for i, (va, ta, ca, vca) in enumerate(pieces):
         vertex_arrays.append(va)
         triangle_arrays.append(ta + offset)
         color_arrays.append(ca)
+        vcolor_arrays.append(vca)
         source_arrays.append(full(len(ta), i, dtype=int32))
         offset += len(va)
     return SceneGeometry(
@@ -157,6 +165,7 @@ def _combine(pieces, sources):
         concatenate(color_arrays),
         sources,
         concatenate(source_arrays),
+        concatenate(vcolor_arrays),
     )
 
 
@@ -182,9 +191,11 @@ def weld_vertices(geometry, tolerance=1e-4):
             (new_triangles[:, 1] != new_triangles[:, 2]) &
             (new_triangles[:, 0] != new_triangles[:, 2]))
     sources = geometry.triangle_sources
+    vcolors = geometry.vertex_colors
     return SceneGeometry(new_vertices.astype(float32), new_triangles[keep],
                          geometry.triangle_colors[keep], geometry.sources,
-                         None if sources is None else sources[keep])
+                         None if sources is None else sources[keep],
+                         None if vcolors is None else vcolors[first])
 
 
 def _log10(x):
@@ -218,4 +229,5 @@ def place_for_printing(geometry, scale=1.0, size=None):
 
     return SceneGeometry(v.astype(float32), geometry.triangles,
                          geometry.triangle_colors, geometry.sources,
-                         geometry.triangle_sources), scale
+                         geometry.triangle_sources,
+                         geometry.vertex_colors), scale

@@ -146,6 +146,74 @@ def test_too_many_colors():
     check("20 colors: falls back to split parts", r.ok, "; ".join(r.problems))
 
 
+def _analysed(*commands):
+    """Build a scene and return the printability report for it."""
+    from chimerax.save3mf import printcheck, scene as scene_module
+    scene(*commands)
+    g = scene_module.collect_geometry(session)     # noqa: F821
+    g = scene_module.weld_vertices(g)
+    g, _ = scene_module.place_for_printing(g, scale=1.0)
+    return printcheck.analyze(g)
+
+
+def test_ribbon_is_one_body():
+    """A plain ribbon is ~20 abutting surfaces and prints as one object.
+
+    Reported by the ChimeraX developer: calling these "pieces that do not
+    touch" which "will not print as a single object" was wrong on both counts.
+    """
+    r = _analysed("open 1ubq")
+    check("ribbon: 20-odd surfaces make one printed body", r.body_count == 1,
+          "%d bodies from %d surfaces" % (r.body_count, r.shell_count))
+    check("ribbon: nothing reported as floating free", r.loose_count == 0,
+          "%d loose" % r.loose_count)
+    check("ribbon: several surfaces seen", r.shell_count > 1,
+          "%d surfaces" % r.shell_count)
+
+
+def test_spheres_are_one_body():
+    """Overlapping atom spheres and bond cylinders print as one object."""
+    r = _analysed("open 1ubq", "hide ribbon", "show atoms", "hide solvent")
+    check("spheres: hundreds of surfaces make one printed body",
+          r.body_count == 1,
+          "%d bodies from %d surfaces" % (r.body_count, r.shell_count))
+    check("spheres: open-ended cylinders are noticed", r.open_shells > 0,
+          "%d open surfaces" % r.open_shells)
+
+
+def test_density_cavities():
+    """Interior voids of a density map are cavities, not loose fragments."""
+    r = _analysed("open 1ubq", "hide ribbon", "surface close",
+                  "molmap protein 5")
+    check("molmap: interior voids counted as cavities", r.cavity_count == 3,
+          "%d cavities" % r.cavity_count)
+    check("molmap: one printed body", r.body_count == 1,
+          "%d bodies" % r.body_count)
+    check("molmap: cavities not called loose pieces", r.loose_count == 0,
+          "%d loose" % r.loose_count)
+
+
+def test_fullcolor():
+    """Continuous colour survives as a colour per vertex."""
+    scene("open 1ubq", "mlp protein", "hide atoms", "hide cartoon")
+    path = export("t_fullcolor.3mf", "size 60 flavor fullcolor")
+    r = validate(path)
+    check("fullcolor: file is structurally valid", r.ok, "; ".join(r.problems))
+
+    import zipfile
+    import re
+    with zipfile.ZipFile(path) as z:
+        model = z.read("3D/3dmodel.model").decode("utf-8")
+    colors = len(re.findall(r"<m:color ", model))
+    per_vertex = len(re.findall(r'p2="', model))
+    check("fullcolor: many distinct colours kept", colors > 100,
+          "%d colours" % colors)
+    check("fullcolor: colour given per vertex, not per triangle",
+          per_vertex > 1000, "%d triangles with p2/p3" % per_vertex)
+    check("fullcolor: no extruder painting in a full-colour file",
+          "mmu_segmentation" not in model and "paint_color" not in model)
+
+
 def test_palette_command():
     scene("open 1a3n", "delete solvent", "hide atoms", "hide cartoon",
           "surface", "color byattribute bfactor palette rainbow")
@@ -193,6 +261,10 @@ TESTS = [
     test_split_parts,
     test_colors_off,
     test_too_many_colors,
+    test_ribbon_is_one_body,
+    test_spheres_are_one_body,
+    test_density_cavities,
+    test_fullcolor,
     test_palette_command,
     test_empty_scene,
     test_print_cost_model,

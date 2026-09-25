@@ -1,129 +1,164 @@
 # vim: set expandtab shiftwidth=4 softtabstop=4:
-"""Printability report for the geometry about to be written.
+"""What a slicer will make of the geometry, described honestly.
 
-This does not repair anything.  Preparing a structure for printing - adding
-struts between disjoint pieces, thickening ribbons, deleting solvent - is what
-the NIH 3D print presets bundle is for:
+ChimeraX scenes are almost never stitched together. A ribbon is a separate
+surface per helix, strand and coil; atoms are separate spheres; bond cylinders
+are open-ended tubes. These pieces abut or overlap rather than sharing
+vertices, so *topological* connectivity says almost nothing about what will
+print. Reporting it as if it did produces alarming nonsense - "20 pieces that
+do not touch" for a plain ribbon, or "loose fragments" for the interior
+cavities of a density map.
 
-    https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxnihpresets
+What actually decides the outcome:
 
-The exporter's job is to measure what it is given and say plainly what a slicer
-will make of it, before the file is written.
+  * **Winding.** A closed shell wound inside-out bounds a void, not a solid.
+    Density-map surfaces routinely contain such cavities. Slicers fill the
+    space inside an odd number of surfaces, so a cavity simply stays empty.
+
+  * **Proximity.** Two shells whose surfaces come within about an extrusion
+    width fuse into one printed body, whether or not they share vertices.
+    That is why 600 overlapping atom spheres print as one object.
+
+  * **Isolation.** Only a piece that touches nothing else prints separately -
+    a water, an ion, a ligand sitting in space.
+
+This module measures those three things and never modifies geometry.
+Preparing a structure for printing - struts, thickened ribbons, solvent
+removal - is the job of the NIH 3D print presets bundle.
 """
 
 from numpy import (
-    abs as np_abs, arange, cross, einsum, repeat, sort, unique, where, zeros,
+    abs as np_abs, arange, argsort, bincount, concatenate, cross, einsum,
+    empty, floor, int64, int8, lexsort, maximum, ones, repeat, sort, sqrt,
+    unique, zeros,
 )
 
-# a fragment smaller than this share of total volume is treated as debris
-DEBRIS_VOLUME_FRACTION = 0.01
-# if the biggest piece holds at least this much, the rest really are fragments;
-# below it the model is not one body at all
-COHERENT_VOLUME_FRACTION = 0.8
+# a 0.4 mm nozzle bridges gaps of roughly this size, so surfaces this close
+# fuse in the print
+FUSE_MM = 0.4
+# a body holding less than this share of the total volume is "small"
+SMALL_BODY_FRACTION = 0.01
 # thinnest feature a common 0.4 mm nozzle can hold up
 THIN_FEATURE_MM = 1.0
 # bigger than the build volume of all but the largest desktop printers
 LARGE_PLATE_MM = 300.0
 # below this the whole model is about as wide as a few extrusions
 TINY_MODEL_MM = 5.0
+# above this many shells the fusion analysis is skipped
+MAX_SHELLS = 200000
 
 
 class PrintReport:
+    """What the geometry is, in printing terms rather than mesh terms."""
 
     def __init__(self):
-        self.shell_count = 0
-        self.debris_count = 0
-        self.debris_volume_fraction = 0.0
-        self.largest_volume_fraction = 1.0
-        self.open_edges = 0
-        self.nonmanifold_edges = 0
-        self.thinnest_shell_mm = None
         self.triangle_count = 0
         self.size_mm = (0.0, 0.0, 0.0)
-        self.enclosed_count = 0
-        self.enclosed_triangles = 0
-        self.enclosed_checked = True     # False when skipped entirely
-        self.enclosed_partial = False    # True when only the largest were tested
+        self.shell_count = 0           # topological surfaces
+        self.cavity_count = 0          # inside-out shells: interior voids
+        self.body_count = 0            # what will actually print
+        self.body_fractions = []       # volume share of each body, descending
+        self.loose_count = 0           # bodies that touch nothing else
+        self.loose_fraction = 0.0
+        self.open_edges = 0
+        self.nonmanifold_edges = 0
+        self.open_shells = 0           # surfaces that are not closed
+        self.thinnest_body_mm = None
+        self.fuse_mm = FUSE_MM
+        self.analysed = True           # False if the scene was too large
 
     @property
     def watertight(self):
         return self.open_edges == 0 and self.nonmanifold_edges == 0
 
+    # ------------------------------------------------------------- reporting
+
+    def notes(self):
+        """Statements of fact about the scene. Not problems."""
+        out = []
+        if not self.analysed:
+            return out
+
+        solid_shells = self.shell_count - self.cavity_count
+        if self.body_count == 1 and solid_shells > 1:
+            out.append(
+                "One connected body, built from %d separate surfaces that "
+                "touch or overlap. ChimeraX draws ribbons, atoms and bonds as "
+                "separate pieces; a slicer fuses anything closer than about "
+                "%.1f mm, so this prints as one object."
+                % (solid_shells, self.fuse_mm))
+        elif self.body_count == 1 and self.cavity_count:
+            out.append("One connected body; it will print as one object.")
+        elif self.body_count > 1 and self.loose_count == 0:
+            out.append(
+                "%d connected bodies, none of them stray: each is a solid "
+                "group of touching surfaces." % self.body_count)
+
+        if self.cavity_count:
+            out.append(
+                "%d interior cavit%s (surfaces wound inside-out, such as voids "
+                "in a density map). Slicers leave these hollow; they cost no "
+                "filament."
+                % (self.cavity_count, "y" if self.cavity_count == 1 else "ies"))
+
+        if self.open_shells:
+            out.append(
+                "%d of %d surfaces are not closed. Bond cylinders have no end "
+                "caps and clipped surfaces are cut open, which is normal in "
+                "ChimeraX; slicers close them when slicing."
+                % (self.open_shells, self.shell_count))
+        return out
+
     def warnings(self):
-        """Human-readable problems, worst first.  Empty means nothing to say."""
+        """Things that will genuinely go wrong, worst first."""
         out = []
         longest = max(self.size_mm) if self.size_mm else 0.0
         if longest > LARGE_PLATE_MM:
             out.append(
                 "Model is %.0f mm across, bigger than most build plates (a "
-                "Prusa XL is 360 mm). Scale it down with 'size N', or split "
-                "it up in the slicer." % longest)
+                "Prusa XL is 360 mm). Scale it down with 'size N', or split it "
+                "in the slicer." % longest)
         elif 0.0 < longest < TINY_MODEL_MM:
             out.append(
                 "Model is only %.1f mm across - about the width of a few "
                 "extrusions. Almost nothing will survive printing at this "
                 "size; scale it up with 'size N'." % longest)
-        if not self.watertight:
-            bits = []
-            if self.open_edges:
-                bits.append("%d open edges" % self.open_edges)
-            if self.nonmanifold_edges:
-                bits.append("%d edges shared by more than two triangles"
-                            % self.nonmanifold_edges)
+
+        if self.loose_count:
             out.append(
-                "Mesh is not watertight (%s). Slicers will try to repair it, "
-                "with unpredictable results. Overlapping shells from ball-and-"
-                "stick or sphere styles are the usual cause." % ", ".join(bits))
-        if self.shell_count > 1 and self.largest_volume_fraction < COHERENT_VOLUME_FRACTION:
+                "%d piece%s float free of the main body (%.1f%% of the volume "
+                "between them) - typically waters, ions or ligands. %s print "
+                "as separate objects, and small ones may not survive removal "
+                "from the plate."
+                % (self.loose_count, "" if self.loose_count == 1 else "s",
+                   100.0 * self.loose_fraction,
+                   "It will" if self.loose_count == 1 else "They will"))
+
+        if (self.thinnest_body_mm is not None
+                and self.thinnest_body_mm < THIN_FEATURE_MM):
             out.append(
-                "This is not one connected body: %d pieces that do not touch, "
-                "the largest holding only %.1f%% of the volume. It will not "
-                "print as a single object."
-                % (self.shell_count, 100.0 * self.largest_volume_fraction))
-        elif self.debris_count:
-            out.append(
-                "%d of %d pieces are loose fragments (%.1f%% of total volume "
-                "between them) - typically waters, ions or ligands. They will "
-                "print as separate bits."
-                % (self.debris_count, self.shell_count,
-                   100.0 * self.debris_volume_fraction))
-        elif self.shell_count > 1:
-            out.append(
-                "Model is in %d separate pieces that do not touch. They will "
-                "print separately unless connected." % self.shell_count)
-        if self.enclosed_count:
-            share = (100.0 * self.enclosed_triangles / self.triangle_count
-                     if self.triangle_count else 0.0)
-            out.append(
-                "%d piece%s (%d triangles, %.0f%% of the model) %s sealed "
-                "inside another piece and will never be visible, but still "
-                "cost print time and filament. A cartoon left on underneath a "
-                "surface is the usual cause - hide it before exporting.%s"
-                % (self.enclosed_count, "" if self.enclosed_count == 1 else "s",
-                   self.enclosed_triangles, share,
-                   "is" if self.enclosed_count == 1 else "are",
-                   " Only the largest pieces were checked, so there may be more."
-                   if self.enclosed_partial else ""))
-        if self.thinnest_shell_mm is not None and self.thinnest_shell_mm < THIN_FEATURE_MM:
-            out.append(
-                "Thinnest piece measures %.2f mm across, below the ~%.1f mm a "
-                "0.4 mm nozzle can hold. Scale up or thicken it."
-                % (self.thinnest_shell_mm, THIN_FEATURE_MM))
+                "Thinnest separate piece measures %.2f mm across, below the "
+                "~%.1f mm a 0.4 mm nozzle can hold."
+                % (self.thinnest_body_mm, THIN_FEATURE_MM))
         return out
 
     def advice(self):
-        if self.watertight and self.shell_count <= 1:
-            return None
-        return ("The NIH 3D print presets bundle adds struts between disjoint "
-                "pieces, thickens ribbons and removes solvent: "
-                "https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxnihpresets")
+        if self.loose_count or (self.thinnest_body_mm is not None
+                                and self.thinnest_body_mm < THIN_FEATURE_MM):
+            return ("The NIH 3D print presets bundle adds struts between "
+                    "disjoint pieces, thickens ribbons and removes solvent: "
+                    "https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxnihpresets")
+        return None
 
 
-def analyze(geometry):
-    """Measure the welded, millimetre-scaled geometry."""
+# ------------------------------------------------------------------ analysis
+
+def analyze(geometry, fuse_mm=FUSE_MM):
+    """Measure the millimetre-scaled geometry."""
     report = PrintReport()
     v, t = geometry.vertices, geometry.triangles
     report.triangle_count = len(t)
+    report.fuse_mm = fuse_mm
     if len(t) == 0:
         return report
 
@@ -131,61 +166,90 @@ def analyze(geometry):
     report.size_mm = tuple(float(x) for x in (high - low))
 
     _check_edges(t, report)
-    _check_shells(v, t, report)
+
+    labels = _triangle_components(t)
+    if labels is None:
+        report.analysed = False
+        return report
+    n_shells = int(labels.max()) + 1
+    report.shell_count = n_shells
+    if n_shells > MAX_SHELLS:
+        report.analysed = False
+        return report
+
+    report.open_shells = _count_open_shells(t, labels, n_shells)
+
+    volumes = _shell_volumes(v, t, labels, n_shells)      # signed
+    cavity = volumes < 0
+    report.cavity_count = int(cavity.sum())
+
+    bodies = _fuse_shells(v, t, labels, n_shells, fuse_mm)
+    _describe_bodies(v, t, labels, bodies, volumes, cavity, report)
     return report
 
 
+def _describe_bodies(vertices, triangles, labels, bodies, volumes, cavity,
+                     report):
+    solid = ~cavity
+    if not solid.any():
+        return
+
+    n_bodies = int(bodies.max()) + 1
+    body_volume = bincount(bodies[solid], weights=volumes[solid],
+                           minlength=n_bodies)
+    present = body_volume > 0
+    body_volume = body_volume[present]
+    if len(body_volume) == 0:
+        return
+
+    total = float(body_volume.sum()) or 1.0
+    fractions = sort(body_volume / total)[::-1]
+    report.body_count = len(body_volume)
+    report.body_fractions = [float(f) for f in fractions]
+
+    if report.body_count > 1:
+        # every body other than the largest is, by definition, not touching it
+        report.loose_count = int(len(fractions) - 1)
+        report.loose_fraction = float(fractions[1:].sum())
+        report.thinnest_body_mm = _thinnest_body(
+            vertices, triangles, labels, bodies, solid)
+    return
+
+
+def _thinnest_body(vertices, triangles, labels, bodies, solid):
+    """Smallest bounding-box dimension over the separate bodies."""
+    n_bodies = int(bodies.max()) + 1
+    body_of_triangle = bodies[labels]
+    thinnest = None
+    for b in range(n_bodies):
+        tris = triangles[body_of_triangle == b]
+        if len(tris) == 0:
+            continue
+        pts = vertices[unique(tris)]
+        extent = float((pts.max(axis=0) - pts.min(axis=0)).min())
+        thinnest = extent if thinnest is None else min(thinnest, extent)
+    return thinnest
+
+
+# ------------------------------------------------------------- mesh topology
+
 def _check_edges(triangles, report):
-    """Count edges that are not shared by exactly two triangles."""
-    edges = zeros((3 * len(triangles), 2), triangles.dtype)
-    edges[0::3] = triangles[:, [0, 1]]
-    edges[1::3] = triangles[:, [1, 2]]
-    edges[2::3] = triangles[:, [2, 0]]
-    edges = sort(edges, axis=1)            # undirected
+    edges = _edge_array(triangles)
     _, counts = unique(edges, axis=0, return_counts=True)
     report.open_edges = int((counts == 1).sum())
     report.nonmanifold_edges = int((counts > 2).sum())
 
 
-def _check_shells(vertices, triangles, report):
-    """Split into connected pieces and size each one.
-
-    Pieces are connected through shared *edges*, not shared vertices: two
-    shells meeting at a single point are separate as far as a printer is
-    concerned, and this is also how slicers count parts.
-    """
-    labels = _triangle_components(triangles)
-    if labels is None:
-        return
-    n_shells = int(labels.max()) + 1
-    report.shell_count = n_shells
-    if n_shells <= 1:
-        report.thinnest_shell_mm = float(min(report.size_mm))
-        return
-
-    volumes = _shell_volumes(vertices, triangles, labels, n_shells)
-    lows, highs = _shell_boxes(vertices, triangles, labels, n_shells)
-    extents = (highs - lows).min(axis=1)
-    _check_enclosed(vertices, triangles, labels, lows, highs, volumes, report)
-
-    total = volumes.sum()
-    if total <= 0:
-        return
-    fractions = volumes / total
-    report.largest_volume_fraction = float(fractions.max())
-    debris = fractions < DEBRIS_VOLUME_FRACTION
-    report.debris_count = int(debris.sum())
-    report.debris_volume_fraction = float(fractions[debris].sum())
-
-    # thinness is only interesting for pieces that matter structurally
-    keep = ~debris if debris.any() and not debris.all() else slice(None)
-    structural = extents[keep]
-    if len(structural):
-        report.thinnest_shell_mm = float(structural.min())
+def _edge_array(triangles):
+    edges = empty((3 * len(triangles), 2), dtype=triangles.dtype)
+    edges[0::3] = triangles[:, [0, 1]]
+    edges[1::3] = triangles[:, [1, 2]]
+    edges[2::3] = triangles[:, [2, 0]]
+    return sort(edges, axis=1)
 
 
 def _triangle_components(triangles):
-    """Label every triangle with its edge-connected piece."""
+    """Label every triangle with its edge-connected surface."""
     try:
         from scipy.sparse import coo_matrix
         from scipy.sparse.csgraph import connected_components
@@ -193,144 +257,255 @@ def _triangle_components(triangles):
         return None
 
     nt = len(triangles)
-    edges = zeros((3 * nt, 2), triangles.dtype)
-    edges[0::3] = triangles[:, [0, 1]]
-    edges[1::3] = triangles[:, [1, 2]]
-    edges[2::3] = triangles[:, [2, 0]]
-    edges = sort(edges, axis=1)
+    edges = _edge_array(triangles)
     _, edge_ids = unique(edges, axis=0, return_inverse=True)
     edge_ids = edge_ids.ravel()
 
     tri_of_edge = repeat(arange(nt), 3)
     order = edge_ids.argsort(kind='stable')
-    e_sorted, t_sorted = edge_ids[order], tri_of_edge[order]
-    shared = e_sorted[1:] == e_sorted[:-1]
-    rows, cols = t_sorted[:-1][shared], t_sorted[1:][shared]
-
-    data = zeros(len(rows), dtype='int8') + 1
-    graph = coo_matrix((data, (rows, cols)), shape=(nt, nt))
+    e, tri = edge_ids[order], tri_of_edge[order]
+    shared = e[1:] == e[:-1]
+    graph = coo_matrix((ones(int(shared.sum()), dtype=int8),
+                        (tri[:-1][shared], tri[1:][shared])), shape=(nt, nt))
     _, labels = connected_components(graph, directed=False)
     return labels
 
 
+def _count_open_shells(triangles, labels, n_shells):
+    """How many surfaces have a boundary rather than being closed."""
+    edges = _edge_array(triangles)
+    shell_of_edge = repeat(labels, 3)
+    key = edges[:, 0].astype(int64) * (edges.max() + 1) + edges[:, 1]
+    order = lexsort((shell_of_edge, key))
+    k = key[order]
+    counts = bincount(unique(k, return_inverse=True)[1])
+    boundary = counts == 1
+    if not boundary.any():
+        return 0
+    _, inverse = unique(k, return_inverse=True)
+    open_shells = unique(shell_of_edge[order][boundary[inverse]])
+    return int(len(open_shells))
+
+
 def _shell_volumes(vertices, triangles, labels, n_shells):
-    """Enclosed volume of each piece, via the divergence theorem."""
-    from numpy import bincount
+    """Signed volume of each surface. Negative means wound inside-out, which
+    for a closed surface means it bounds a void rather than a solid."""
     a = vertices[triangles[:, 0]]
     b = vertices[triangles[:, 1]]
     c = vertices[triangles[:, 2]]
     contrib = einsum('ij,ij->i', a, cross(b, c)) / 6.0
-    return np_abs(bincount(labels, weights=contrib, minlength=n_shells))
+    return bincount(labels, weights=contrib, minlength=n_shells)
 
 
-def _shell_boxes(vertices, triangles, labels, n_shells):
-    """Bounding box of each piece."""
-    from numpy import empty, full, inf, maximum, minimum
-    vertex_labels = empty(len(vertices), dtype=labels.dtype)
-    vertex_labels[triangles.ravel()] = repeat(labels, 3)
-    lows = full((n_shells, 3), inf)
-    highs = full((n_shells, 3), -inf)
-    minimum.at(lows, vertex_labels, vertices)
-    maximum.at(highs, vertex_labels, vertices)
-    return lows, highs
+# ---------------------------------------------------------- printed bodies
+
+# never generate more surface samples than this, however coarse the mesh
+SAMPLE_BUDGET = 3000000
 
 
-# ------------------------------------------------- enclosed (invisible) parts
+def _surface_samples(vertices, triangles, labels, tau, budget=SAMPLE_BUDGET):
+    """Points covering the surface no more coarsely than `tau`.
 
-# testing every pair is quadratic; stop well before that hurts
-MAX_ENCLOSURE_TESTS = 64
-# above this many pieces the pairwise box comparison itself gets expensive
-MAX_SHELLS_FOR_ENCLOSURE = 2000
-# how many points of a piece must be inside the other for it to count
-ENCLOSURE_SAMPLES = 8
-
-
-def _check_enclosed(vertices, triangles, labels, lows, highs, volumes, report):
-    """Find pieces sealed inside another piece, which print but never show.
-
-    A cartoon left displayed under a molecular surface is the common case: it
-    is invisible in the print yet costs filament and time.
+    Testing proximity on vertices alone fails on coarse meshes: two boxes can
+    interpenetrate while their corners stay far apart. Rather than loosening
+    the distance threshold - which would wrongly fuse things that really are
+    apart - large triangles are sampled across their face.
     """
-    from numpy import bincount
+    from numpy import ceil, clip, stack, vstack
 
-    n = len(volumes)
-    if n < 2:
-        return
-    if n > MAX_SHELLS_FOR_ENCLOSURE:
-        report.enclosed_checked = False
-        return
+    vertex_shell = empty(len(vertices), dtype=int64)
+    vertex_shell[triangles.ravel()] = repeat(labels, 3)
+    point_sets = [vertices]
+    tag_sets = [vertex_shell]
 
-    # only pairs whose boxes nest can possibly be enclosed
-    nested = (((lows[:, None, :] >= lows[None, :, :]).all(axis=2)) &
-              ((highs[:, None, :] <= highs[None, :, :]).all(axis=2)) &
-              (volumes[None, :] > volumes[:, None]))
-    candidates = [(inner, int(nested[inner].argmax()))
-                  for inner in range(n) if nested[inner].any()]
+    a = vertices[triangles[:, 0]]
+    b = vertices[triangles[:, 1]]
+    c = vertices[triangles[:, 2]]
+    longest = sqrt(maximum(maximum(((b - a) ** 2).sum(axis=1),
+                                   ((c - b) ** 2).sum(axis=1)),
+                           ((a - c) ** 2).sum(axis=1)))
+    steps = clip(ceil(longest / max(tau, 1e-9)), 1, 16).astype(int64)
 
+    # keep the total bounded: halve the sampling until it fits
+    while True:
+        total = int(((steps + 1) * (steps + 2) // 2).sum())
+        if total <= budget or (steps <= 1).all():
+            break
+        steps = maximum(steps // 2, 1)
+
+    for k in unique(steps):
+        which = steps == k
+        if not which.any():
+            continue
+        bary = _barycentric_grid(int(k))
+        pa, pb, pc = a[which], b[which], c[which]
+        # (triangles, samples, 3)
+        pts = (pa[:, None, :] * bary[None, :, 0:1]
+               + pb[:, None, :] * bary[None, :, 1:2]
+               + pc[:, None, :] * bary[None, :, 2:3])
+        point_sets.append(pts.reshape(-1, 3))
+        tag_sets.append(repeat(labels[which], bary.shape[0]))
+
+    return vstack(point_sets), concatenate(tag_sets)
+
+
+def _barycentric_grid(k):
+    """Barycentric coordinates of a k x k lattice over a triangle.
+
+    For k = 1 the lattice is just the corners, which are already sampled as
+    vertices, so the centroid is used instead - that is the common case on a
+    molecular mesh and it keeps the point count down.
+    """
+    from numpy import array
+    if k <= 1:
+        return array([[1 / 3.0, 1 / 3.0, 1 / 3.0]], dtype=float)
+    coords = []
+    for i in range(k + 1):
+        for j in range(k + 1 - i):
+            coords.append(((k - i - j) / k, i / k, j / k))
+    return array(coords, dtype=float)
+
+def _fuse_shells(vertices, triangles, labels, n_shells, fuse_mm):
+    """Group surfaces into the bodies a printer will produce.
+
+    Surfaces fuse when they come within `fuse_mm`, which is what actually
+    happens in a print, rather than when they share vertices, which is a
+    modelling detail ChimeraX has no reason to arrange.
+
+    Done on a voxel grid instead of pairwise tests: sorting points by
+    (voxel, surface) puts everything sharing a voxel together, so linking
+    consecutive differing surfaces connects the whole group. Two grids offset
+    by half a voxel catch surfaces that straddle a boundary.
+    """
+    if n_shells <= 1:
+        return zeros(max(n_shells, 1), dtype=int64)
+    try:
+        from scipy.sparse import coo_matrix
+        from scipy.sparse.csgraph import connected_components
+    except ImportError:
+        return arange(n_shells)
+
+    tau = fuse_mm
+    points, tags = _surface_samples(vertices, triangles, labels, tau)
+
+    rows, cols = [], []
+    for offset in (0.0, 0.5):
+        cell = floor(points / tau + offset).astype(int64)
+        key = (cell[:, 0] * 1000003 + cell[:, 1]) * 1000003 + cell[:, 2]
+        order = lexsort((tags, key))
+        k, s = key[order], tags[order]
+        link = (k[1:] == k[:-1]) & (s[1:] != s[:-1])
+        rows.append(s[:-1][link])
+        cols.append(s[1:][link])
+
+    r, c = concatenate(rows), concatenate(cols)
+    graph = coo_matrix((ones(len(r), dtype=int8), (r, c)),
+                       shape=(n_shells, n_shells))
+    _, bodies = connected_components(graph, directed=False)
+    return _fuse_interpenetrating(vertices, triangles, labels, bodies,
+                                  n_shells)
+
+
+# a shell pair is only tested for interpenetration if proximity left them
+# apart; this caps the work when that still leaves many candidates
+MAX_OVERLAP_TESTS = 400
+OVERLAP_SAMPLES = 6
+
+
+def _fuse_interpenetrating(vertices, triangles, labels, bodies, n_shells):
+    """Also fuse shells that pass through each other.
+
+    Proximity alone misses interpenetration on coarse meshes: two boxes can
+    overlap by half their width while their vertices stay millimetres apart.
+    Only pairs that proximity left in different bodies are tested, so on a
+    normal molecular scene - where everything has already fused - this costs
+    nothing.
+    """
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+
+    if len(unique(bodies)) < 2:
+        return bodies
+
+    lows, highs, meshes = {}, {}, {}
+    for s in range(n_shells):
+        tris = triangles[labels == s]
+        if len(tris) == 0:
+            continue
+        pts = vertices[unique(tris)]
+        lows[s], highs[s] = pts.min(axis=0), pts.max(axis=0)
+        meshes[s] = tris
+
+    candidates = []
+    shells_present = sorted(meshes)
+    for i, a in enumerate(shells_present):
+        for b in shells_present[i + 1:]:
+            if bodies[a] == bodies[b]:
+                continue
+            if (lows[a] <= highs[b]).all() and (lows[b] <= highs[a]).all():
+                candidates.append((a, b))
     if not candidates:
-        return
-    if len(candidates) > MAX_ENCLOSURE_TESTS:
-        # biggest first: those are the ones worth telling the user about
-        candidates.sort(key=lambda pair: -volumes[pair[0]])
-        candidates = candidates[:MAX_ENCLOSURE_TESTS]
-        report.enclosed_partial = True
+        return bodies
+    if len(candidates) > MAX_OVERLAP_TESTS:
+        candidates = candidates[:MAX_OVERLAP_TESTS]
 
-    triangle_counts = bincount(labels, minlength=n)
-    enclosed_triangles = 0
-    enclosed_count = 0
-    for inner, outer in candidates:
-        if _shell_inside(vertices, triangles, labels, inner, outer):
-            enclosed_count += 1
-            enclosed_triangles += int(triangle_counts[inner])
+    rows, cols = [], []
+    for a, b in candidates:
+        if _shells_interpenetrate(vertices, meshes[a], meshes[b]):
+            rows.append(a)
+            cols.append(b)
+    if not rows:
+        return bodies
 
-    report.enclosed_count = enclosed_count
-    report.enclosed_triangles = enclosed_triangles
-
-
-def _shell_inside(vertices, triangles, labels, inner, outer):
-    """True if every sampled point of the inner piece is inside the outer one."""
-    from numpy import unique
-    inner_tris = triangles[labels == inner]
-    outer_tris = triangles[labels == outer]
-    if len(inner_tris) == 0 or len(outer_tris) == 0:
-        return False
-
-    points = vertices[unique(inner_tris)]
-    step = max(1, len(points) // ENCLOSURE_SAMPLES)
-    points = points[::step][:ENCLOSURE_SAMPLES]
-
-    a = vertices[outer_tris[:, 0]]
-    b = vertices[outer_tris[:, 1]]
-    c = vertices[outer_tris[:, 2]]
-    box_low = __minimum3(a, b, c)
-    box_high = __maximum3(a, b, c)
-
-    for p in points:
-        if not _point_inside(p, a, b, c, box_low, box_high):
-            return False
-    return True
+    graph = coo_matrix((ones(len(rows), dtype=int8), (rows, cols)),
+                       shape=(n_shells, n_shells))
+    # keep what proximity already joined
+    pr, pc = [], []
+    for s in range(1, n_shells):
+        if bodies[s] == bodies[s - 1]:
+            pr.append(s - 1)
+            pc.append(s)
+    for body in unique(bodies):
+        members = [s for s in range(n_shells) if bodies[s] == body]
+        for x, y in zip(members, members[1:]):
+            pr.append(x)
+            pc.append(y)
+    graph = graph + coo_matrix(
+        (ones(len(pr), dtype=int8), (pr, pc)), shape=(n_shells, n_shells))
+    _, merged = connected_components(graph, directed=False)
+    return merged
 
 
-def __minimum3(a, b, c):
-    from numpy import minimum
-    return minimum(minimum(a, b), c)
+def _shells_interpenetrate(vertices, tris_a, tris_b):
+    """True if a sampled point of either shell lies inside the other."""
+    return (_any_point_inside(vertices, tris_a, tris_b)
+            or _any_point_inside(vertices, tris_b, tris_a))
 
 
-def __maximum3(a, b, c):
-    from numpy import maximum
-    return maximum(maximum(a, b), c)
+def _any_point_inside(vertices, tris_inner, tris_outer):
+    pts = vertices[unique(tris_inner)]
+    step = max(1, len(pts) // OVERLAP_SAMPLES)
+    sample = pts[::step][:OVERLAP_SAMPLES]
+    a = vertices[tris_outer[:, 0]]
+    b = vertices[tris_outer[:, 1]]
+    c = vertices[tris_outer[:, 2]]
+    from numpy import maximum as npmax, minimum as npmin
+    lo = npmin(npmin(a, b), c)
+    hi = npmax(npmax(a, b), c)
+    for p in sample:
+        if _point_inside(p, a, b, c, lo, hi):
+            return True
+    return False
 
 
-def _point_inside(p, a, b, c, box_low, box_high):
+def _point_inside(p, a, b, c, lo, hi):
     """Parity of a ray cast straight up from p through the triangles."""
-    from numpy import abs as nabs
-    candidates = ((box_low[:, 0] <= p[0]) & (box_high[:, 0] >= p[0]) &
-                  (box_low[:, 1] <= p[1]) & (box_high[:, 1] >= p[1]) &
-                  (box_high[:, 2] >= p[2]))
-    if not candidates.any():
+    from numpy import abs as nabs, where
+    hit_box = ((lo[:, 0] <= p[0]) & (hi[:, 0] >= p[0]) &
+               (lo[:, 1] <= p[1]) & (hi[:, 1] >= p[1]) & (hi[:, 2] >= p[2]))
+    if not hit_box.any():
         return False
-    A, B, C = a[candidates], b[candidates], c[candidates]
-
+    A, B, C = a[hit_box], b[hit_box], c[hit_box]
     v0 = C[:, :2] - A[:, :2]
     v1 = B[:, :2] - A[:, :2]
     v2 = p[:2] - A[:, :2]
@@ -339,30 +514,32 @@ def _point_inside(p, a, b, c, box_low, box_high):
     d11 = (v1 * v1).sum(axis=1)
     d20 = (v2 * v0).sum(axis=1)
     d21 = (v2 * v1).sum(axis=1)
-    denom = d00 * d11 - d01 * d01
-    usable = nabs(denom) > 1e-12
+    den = d00 * d11 - d01 * d01
+    usable = nabs(den) > 1e-12
     if not usable.any():
         return False
-    denom = where(usable, denom, 1.0)
-    u = (d11 * d20 - d01 * d21) / denom
-    v = (d00 * d21 - d01 * d20) / denom
+    den = where(usable, den, 1.0)
+    u = (d11 * d20 - d01 * d21) / den
+    v = (d00 * d21 - d01 * d20) / den
     hit = usable & (u >= 0.0) & (v >= 0.0) & (u + v <= 1.0)
     if not hit.any():
         return False
-
     z = (A[hit, 2] + u[hit] * (C[hit, 2] - A[hit, 2])
          + v[hit] * (B[hit, 2] - A[hit, 2]))
     return bool((z > p[2]).sum() % 2 == 1)
 
 
+# -------------------------------------------------------------------- output
+
 def log_report(session, report, quiet=False):
-    """Put the findings in the log; warnings use the log's warning channel."""
-    logger = session.logger
     if quiet:
         return
+    logger = session.logger
+    for note in report.notes():
+        logger.info(note)
     warnings = report.warnings()
     for w in warnings:
         logger.warning(w)
     advice = report.advice()
-    if advice and warnings:
+    if advice:
         logger.info(advice, is_html=False)

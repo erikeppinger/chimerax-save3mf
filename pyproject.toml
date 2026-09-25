@@ -4,7 +4,7 @@ build-backend = "chimerax.bundle_builder.cx_pep517"
 
 [project]
 name = "ChimeraX-Save3MF"
-version = "0.1.1"
+version = "0.2.0"
 description = "Save ChimeraX scenes as 3MF files for 3D printing, with colors carried through as painted extruders"
 authors = [{ name = "Erik Eppinger" }]
 license = "MIT"

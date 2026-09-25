@@ -9,9 +9,10 @@
 <h3>3MF export for 3D printing</h3>
 
 <p>
-Saves the scene as a <a href="https://3mf.io/specification/">3MF</a> file, with
-the colouring preserved as separate parts a slicer can assign to individual
-filaments.
+Saves the scene as a <a href="https://3mf.io/specification/">3MF</a> file,
+carrying the colouring with it: as extruder assignments for a multi-filament
+printer, or as a colour at every vertex for a full-colour printer. See
+<a href="#flavors">Flavours</a> for which to use.
 </p>
 
 <h4>save</h4>
@@ -23,7 +24,8 @@ filaments.
 &nbsp;[&nbsp;<b>scale</b>&nbsp;<i>mm-per-&#8491;</i>&nbsp;]
 &nbsp;[&nbsp;<b>colors</b>&nbsp;true|false&nbsp;]
 &nbsp;[&nbsp;<b>maxColors</b>&nbsp;<i>N</i>&nbsp;]
-&nbsp;[&nbsp;<b>flavor</b>&nbsp;prusa|bambu|generic&nbsp;]
+&nbsp;[&nbsp;<b>flavor</b>&nbsp;prusa|bambu|fullcolor&nbsp;]
+&nbsp;[&nbsp;<b>paint</b>&nbsp;true|false&nbsp;]
 &nbsp;[&nbsp;<b>check</b>&nbsp;true|false&nbsp;]
 </blockquote>
 
@@ -46,15 +48,21 @@ are not printable sizes.</li>
 <li><b>scale</b> &ndash; millimetres per &#8491;ngstrom, default 1.0. Ignored
 if <b>size</b> is given.</li>
 
-<li><b>colors</b> &ndash; whether to split the model into one part per colour
-(default <b>true</b>). With <b>false</b> the whole model is a single part.</li>
+<li><b>colors</b> &ndash; whether to carry the scene's colours into the file
+(default <b>true</b>). With <b>false</b> only geometry is written.</li>
 
-<li><b>maxColors</b> &ndash; merge down to at most this many parts. By default
-nothing is merged, so every distinct colour becomes its own part. See
-<a href="#palette">3mf palette</a> to decide the number.</li>
+<li><b>maxColors</b> &ndash; merge down to at most this many colours, for a
+printer with a limited number of filaments. By default nothing is merged. Has
+no effect with <b>flavor fullcolor</b>, which has no such limit. See
+<a href="#palette">3mf palette</a> to choose the number.</li>
 
-<li><b>flavor</b> &ndash; which slicer the part structure is written for; see
-<a href="#flavors">Slicer flavours</a> below.</li>
+<li><b>flavor</b> &ndash; what kind of printer the file is for; see
+<a href="#flavors">Flavours</a> below.</li>
+
+<li><b>paint</b> &ndash; with a filament flavour, paint extruders onto one
+mesh (default) or, with <b>false</b>, split the mesh into named parts
+instead. Painting keeps the mesh whole; splitting leaves open edges between
+the parts but gives each a name in the slicer's part list.</li>
 
 <li><b>check</b> &ndash; whether to report printability problems (default
 <b>true</b>).</li>
@@ -160,26 +168,44 @@ actually appears in the scene rather than a cluster average.
 </p>
 
 <a name="flavors"></a>
-<h4>Slicer flavours</h4>
+<h4>Flavours: which printer is this for?</h4>
 
 <p>
-Slicers store multi-part models in incompatible ways and the geometry layout
-alone decides which one understands a file, so no single file works everywhere.
+A multi-filament printer and a full-colour printer need different files, and
+the two filament slicers store multi-part models in incompatible ways, so no
+single file works everywhere.
 </p>
 
 <table border="1" cellpadding="4" cellspacing="0">
-<tr><th>flavor</th><th>Colour written as</th><th>Understood by</th></tr>
+<tr><th>flavor</th><th>Colour written as</th><th>For</th></tr>
 <tr><td><b>prusa</b> (default)</td>
-    <td>per-triangle painting,
-        <code>slic3rpe:mmu_segmentation</code></td>
-    <td>PrusaSlicer</td></tr>
+    <td>per-triangle extruder painting,
+        <code>slic3rpe:mmu_segmentation</code>; at most 15 colours</td>
+    <td>PrusaSlicer, multi-filament printers</td></tr>
 <tr><td><b>bambu</b></td>
-    <td>per-triangle painting, <code>paint_color</code></td>
+    <td>per-triangle extruder painting, <code>paint_color</code>;
+        at most 15 colours</td>
     <td>Bambu Studio, OrcaSlicer</td></tr>
-<tr><td><b>generic</b></td>
-    <td>standard colour tags only</td>
-    <td>any 3MF reader</td></tr>
+<tr><td><b>fullcolor</b></td>
+    <td>a colour at every vertex, interpolated across each triangle
+        (Materials-extension <code>colorgroup</code>); no colour limit</td>
+    <td>full-colour printers &ndash; inkjet, binder jet, PolyJet &ndash; and
+        3MF viewers</td></tr>
 </table>
+
+<p>
+<b>fullcolor</b> is the one to use for continuous colouring such as
+<a href="mlp.html"><b>mlp</b></a> or colouring by B-factor: it writes the
+scene's colours unchanged, with no clustering and no extruder assignment.
+<b>generic</b> is accepted as an older name for it.
+</p>
+
+<p>
+Multi-filament printers work the other way round: a filament is a physical
+thing, so the colours must be reduced to as many as the machine has tools.
+That is what <b>maxColors</b> and the
+<a href="#palette">palette</a> preview are for.
+</p>
 
 <p>
 Each colour is written as an extruder already assigned to those triangles, so
@@ -212,16 +238,27 @@ Unless <b>check false</b> is given, each export reports what a slicer will
 make of the geometry. Nothing is modified; the report only describes.
 </p>
 
+<p>
+ChimeraX geometry is almost never stitched together: a ribbon is a separate
+surface per helix, strand and coil, atoms are separate spheres, and bond
+cylinders are open-ended tubes. These abut or overlap rather than sharing
+vertices, so counting topologically separate surfaces says nothing about what
+will print. The report is built around what actually decides the outcome.
+</p>
+
 <ul>
-<li><b>Disconnected pieces</b> &ndash; whether the model is one body, or loose
-fragments around a solid one. A plain cartoon is often many separate ribbon
-segments that would print as loose pieces.</li>
-<li><b>Not watertight</b> &ndash; open or non-manifold edges. Overlapping
-shells from ball-and-stick styles are the usual cause, and slicers repair them
-unpredictably.</li>
-<li><b>Sealed-in geometry</b> &ndash; pieces fully inside another piece. Since
-ChimeraX shows cartoon by default, adding a surface leaves the ribbon sealed
-inside it, invisible in the print but still costing filament and time.</li>
+<li><b>Printed bodies</b> &ndash; surfaces that come within roughly an
+extrusion width fuse in the print, so they count as one body no matter how the
+mesh is built. Six hundred overlapping atom spheres are one object.</li>
+<li><b>Interior cavities</b> &ndash; a closed surface wound inside-out bounds
+a void, not a solid, as in a density map with internal voids. Slicers fill
+what lies inside an odd number of surfaces, so a cavity stays hollow and costs
+no filament.</li>
+<li><b>Genuinely loose pieces</b> &ndash; only geometry touching nothing else,
+such as a water or ion in space, is reported as printing separately.</li>
+<li><b>Open surfaces</b> &ndash; stated as a fact with its cause. Bond
+cylinders have no end caps and clipped surfaces are cut open; slicers close
+them when slicing.</li>
 <li><b>Thin features and extreme sizes</b> &ndash; pieces below what a 0.4 mm
 nozzle can hold, or a model larger than most build plates.</li>
 </ul>

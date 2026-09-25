@@ -1,0 +1,24 @@
+# The four scenarios from the ChimeraX developer's report, in his order.
+# Run:  ChimeraX-console.exe --nogui --exit tests\devfeedback.cxc
+
+echo ===== CASE 1: default ribbon =====
+open 1ubq
+save ~/Desktop/chimerax-3mf/tests/out/fb1_ribbon.3mf
+
+echo ===== CASE 2: spheres, no solvent =====
+hide ribbon
+show atoms
+hide solvent
+save ~/Desktop/chimerax-3mf/tests/out/fb2_spheres.3mf
+
+echo ===== CASE 3: surface coloured continuously by hydrophobicity =====
+mlp protein
+hide atoms
+save ~/Desktop/chimerax-3mf/tests/out/fb3_mlp.3mf
+save ~/Desktop/chimerax-3mf/tests/out/fb3_generic.3mf flavor generic
+save ~/Desktop/chimerax-3mf/tests/out/fb3_nocolor.3mf flavor generic colors false
+
+echo ===== CASE 4: density surface with interior cavities =====
+surface close
+molmap protein 5
+save ~/Desktop/chimerax-3mf/tests/out/fb4_molmap.3mf

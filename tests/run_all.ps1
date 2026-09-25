@@ -121,6 +121,16 @@ if (-not (Test-Path $resultsPath)) {
     }
 }
 
+# ------------------------------------------------- 2b. geometry rules
+Write-Host "`n== body rules on known shapes ==" -ForegroundColor Cyan
+$bodyOut = Invoke-Tool $Python @("$Bundle\tests\test_bodies.py")
+$bodyOut | Select-String -Pattern "pass|FAIL|BODY TESTS:" | ForEach-Object { Write-Host "      $_" }
+if ($script:LastToolExit -ne 0) {
+    Fail "body rules" "the printed-body rules disagree with known geometry"
+} else {
+    Pass "body rules"
+}
+
 # ---------------------------------------------------------------- 3. slicers
 Write-Host "`n== slicer acceptance ==" -ForegroundColor Cyan
 $painted = "$Bundle\tests\out\t_paint.3mf"
