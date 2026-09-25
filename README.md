@@ -324,6 +324,27 @@ ribbons, solvent removal) is what the
 [NIH 3D print presets](https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxnihpresets)
 bundle is for. The exporter just tells you when you need it.
 
+## Related
+
+**[Support Optimizer](https://github.com/erikeppinger/support-optimizer)** —
+a browser-only tool for preparing molecular structures and meshes for
+printing. It picks up where this bundle leaves off: it reads the `.3mf` (or
+`.stl`) written here, seals interior cavities so support material cannot get
+trapped in them, searches for an orientation that minimises overhangs, and
+previews the support paths before you commit to a slice.
+
+The two fit together as a pipeline:
+
+```
+ChimeraX  →  save x.3mf  →  Support Optimizer  →  slicer
+            colour + diagnostics   orientation, cavities, supports
+```
+
+Worth knowing about the handover: the cavities this bundle *reports* are
+exactly the ones Support Optimizer can *seal*. A density-map surface with
+internal voids slices fine either way, but sealing them first avoids support
+material being generated inside a space you can never reach.
+
 ## Licence
 
 [MIT](LICENSE). ChimeraX itself is separately licensed by UCSF.
