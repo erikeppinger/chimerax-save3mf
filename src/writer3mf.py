@@ -106,12 +106,23 @@ def write_3mf(session, path, models=None, scale=None, size=None, check=True,
 
     painting = paint and flavor in ("prusa", "bambu") and regions is not None
     if painting and regions.count > MAX_PAINTED_EXTRUDERS:
-        session.logger.warning(
-            "%d color regions is more than the %d a slicer can paint, so the "
-            "model was split into separate parts instead. Each part then has "
-            "open edges where it meets its neighbours. Use 'maxColors %d' or "
-            "fewer to keep one watertight mesh."
-            % (regions.count, MAX_PAINTED_EXTRUDERS, MAX_PAINTED_EXTRUDERS))
+        from . import log
+        # A count this high almost always means continuous colouring, which a
+        # filament printer cannot reproduce at all - so name the mode that can
+        # before explaining the filament fallback.
+        log.warn(
+            session,
+            "%d colors is far more than the %d a filament printer can paint. "
+            "For a continuously coloured model &ndash; %s, hydrophobicity, "
+            "B-factor &ndash; use %s, which keeps every colour for a "
+            "full-colour printer. To print it on filament instead, reduce the "
+            "colours with %s; the model has meanwhile been split into separate "
+            "parts, which leaves open edges where they meet."
+            % (regions.count, MAX_PAINTED_EXTRUDERS,
+               log.cmd_link("help mlp", "mlp"),
+               log.help_link("flavors", "flavor fullcolor"),
+               log.help_link(text="maxColors %d" % MAX_PAINTED_EXTRUDERS)),
+            html=True)
         painting = False
 
     if painting:
@@ -553,20 +564,33 @@ def _report(session, path, geometry, used_scale, triangles_before_weld,
                             % (regions.count, "" if regions.count == 1 else "s",
                                flavor))
     from .colors import MAX_REGIONS_BEFORE_WARNING, log_palette
+    # the export report is a summary; '3mf palette' is where detail belongs
     log_palette(session, regions.names, regions.hex_colors(alpha=False),
-                regions.counts, regions.areas)
+                regions.counts, regions.areas, limit=12)
 
+    from . import log
+    warned = False
     if painting and regions.count > COMMON_TOOL_COUNT:
-        session.logger.warning(
+        log.warn(
+            session,
             "Painted as extruders 1-%d. A printer with fewer tools prints "
-            "every surplus color with filament 1 and says nothing about it - "
-            "on a %d-tool printer, colors %d-%d here would all come out as "
-            "filament 1. Use 'maxColors N' to match your printer."
+            "every surplus colour with filament 1 and says nothing about it: "
+            "on a %d-tool printer, colours %d-%d here would all come out as "
+            "filament 1. Use %s to match your printer."
             % (regions.count, COMMON_TOOL_COUNT, COMMON_TOOL_COUNT + 1,
-               regions.count))
+               regions.count, log.help_link(text="maxColors N")),
+            html=True)
+        warned = True
 
     if regions.count > MAX_REGIONS_BEFORE_WARNING:
-        session.logger.warning(
-            "%d parts is a lot to assign by hand in a slicer. Run "
-            "'3mf palette' to see the merge options, then export with "
-            "'maxColors N'." % regions.count)
+        log.warn(
+            session,
+            "%d parts is a lot to assign by hand in a slicer. Run %s to see "
+            "what merging them would cost, then export with %s."
+            % (regions.count, log.cmd_link("3mf palette"),
+               log.help_link(text="maxColors N")),
+            html=True)
+        warned = True
+
+    if warned:
+        log.help_hint(session)

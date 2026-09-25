@@ -634,12 +634,15 @@ def _point_inside(p, a, b, c, lo, hi):
 def log_report(session, report, quiet=False):
     if quiet:
         return
-    logger = session.logger
+    from . import log
+
     for note in report.notes():
-        logger.info(note)
+        session.logger.info(note)
     warnings = report.warnings()
     for w in warnings:
-        logger.warning(w)
+        log.warn(session, w)
     advice = report.advice()
     if advice:
-        logger.info(advice, is_html=False)
+        session.logger.info(advice, is_html=False)
+    if warnings:
+        log.help_hint(session)

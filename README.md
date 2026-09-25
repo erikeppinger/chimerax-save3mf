@@ -1,5 +1,7 @@
 # ChimeraX-Save3MF
 
+<img src="docs/icon/save3mf-wordmark.png" alt=".3mf" height="64">
+
 Save a ChimeraX scene as a **3MF** file for 3D printing, with the colours you
 set up in ChimeraX carried through as painted extruders — so a multi-material
 slicer opens the file with each chain already assigned to its own filament.

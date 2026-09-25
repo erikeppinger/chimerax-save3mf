@@ -134,11 +134,19 @@ def describe_delta_e(delta_e):
     return "strong shift"
 
 
-def log_palette(session, names, hex_colors, counts=None, areas=None):
-    """Colour swatches in the ChimeraX log, which renders HTML."""
+def log_palette(session, names, hex_colors, counts=None, areas=None,
+                limit=MAX_REGIONS_BEFORE_WARNING):
+    """Colour swatches in the ChimeraX log, which renders HTML.
+
+    Continuous colouring can produce thousands of regions, and a table with a
+    row for each of them buries everything else in the log, so only the
+    largest are listed.
+    """
     total = float(areas.sum()) if areas is not None and len(areas) else 0.0
+    shown = len(names) if limit is None else min(len(names), limit)
     rows = []
-    for i, (name, hex_color) in enumerate(zip(names, hex_colors)):
+    for i, (name, hex_color) in enumerate(zip(names[:shown],
+                                              hex_colors[:shown])):
         extra = ""
         if counts is not None:
             extra += '<td align="right">&nbsp;%d triangles</td>' % counts[i]
@@ -148,6 +156,9 @@ def log_palette(session, names, hex_colors, counts=None, areas=None):
             '<tr><td style="background:%s;width:2em">&nbsp;</td>'
             '<td>&nbsp;part %d</td><td>&nbsp;%s</td>%s</tr>'
             % (hex_color, i + 1, _escape(name), extra))
+    if shown < len(names):
+        rows.append('<tr><td></td><td colspan="4">&nbsp;&hellip; and %d more'
+                    '</td></tr>' % (len(names) - shown))
     session.logger.info('<table style="border-spacing:0">%s</table>'
                         % "".join(rows), is_html=True)
 

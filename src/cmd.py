@@ -121,14 +121,18 @@ def _log_palette_with_cost(session, regions, cost):
 
 def _warn_costly(session, regions, cost):
     """Say plainly when a part buys very little for a lot of print time."""
+    from . import log
     for r, area_fraction, change_share in cost.costly_regions():
-        session.logger.warning(
+        log.warn(
+            session,
             "Part %d (%s) is %.1f%% of the model but costs about %s of tool "
             "changes, because it appears in %d of %d layers. Dropping it with "
-            "'maxColors %d' would get that time back."
-            % (r + 1, regions.names[r], 100.0 * area_fraction,
+            "%s would get that time back."
+            % (r + 1, log.escape(regions.names[r]), 100.0 * area_fraction,
                cost.saving_text(r), cost.layers_touched[r], cost.n_layers,
-               max(1, regions.count - 1)))
+               log.help_link(text="maxColors %d"
+                             % max(1, regions.count - 1))),
+            html=True)
 
 
 def _hex(rgb):
