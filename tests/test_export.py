@@ -193,6 +193,24 @@ def test_density_cavities():
           "%d loose" % r.loose_count)
 
 
+def test_hidden_geometry_inside():
+    """Geometry sealed inside another surface must be called out.
+
+    Found in testing: running molmap while atoms were still shown put the
+    whole atomic model inside the density surface - 99.7% of the triangles,
+    invisible in the print, and painted as four extra filaments.
+    """
+    r = _analysed("open 1ubq", "hide ribbon", "show atoms", "hide solvent",
+                  "surface close", "molmap protein 5")
+    check("hidden geometry: atoms inside a map are reported",
+          r.enclosed_shells > 1000, "%d enclosed surfaces" % r.enclosed_shells)
+
+    r = _analysed("open 1ubq", "hide ribbon", "hide atoms", "surface close",
+                  "molmap protein 5")
+    check("hidden geometry: nothing reported when the map is alone",
+          r.enclosed_shells == 0, "%d enclosed surfaces" % r.enclosed_shells)
+
+
 def test_fullcolor():
     """Continuous colour survives as a colour per vertex."""
     scene("open 1ubq", "mlp protein", "hide atoms", "hide cartoon")
@@ -264,6 +282,7 @@ TESTS = [
     test_ribbon_is_one_body,
     test_spheres_are_one_body,
     test_density_cavities,
+    test_hidden_geometry_inside,
     test_fullcolor,
     test_palette_command,
     test_empty_scene,

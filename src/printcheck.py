@@ -66,6 +66,9 @@ class PrintReport:
         self.thinnest_body_mm = None
         self.fuse_mm = FUSE_MM
         self.analysed = True           # False if the scene was too large
+        self.enclosed_shells = 0       # surfaces sealed inside another
+        self.enclosed_triangles = 0
+        self.enclosed_partial = False  # True if only some pairs were tested
 
     @property
     def watertight(self):
@@ -123,6 +126,24 @@ class PrintReport:
                 "Model is only %.1f mm across - about the width of a few "
                 "extrusions. Almost nothing will survive printing at this "
                 "size; scale it up with 'size N'." % longest)
+
+        if self.enclosed_shells:
+            share = (100.0 * self.enclosed_triangles / self.triangle_count
+                     if self.triangle_count else 0.0)
+            # 99.7% must not be rounded to "100%": the container is not inside
+            share_text = "%.1f%%" % share if share > 95.0 else "%.0f%%" % share
+            out.append(
+                "%d surface%s (%s of the triangles) lie completely inside "
+                "another surface, so none of it can be seen in the print - "
+                "atoms still shown inside a density map, or a cartoon left on "
+                "under a molecular surface. It still costs filament and, if "
+                "coloured differently, extra tool changes. Hide it before "
+                "exporting unless you meant it to be there.%s"
+                % (self.enclosed_shells,
+                   "" if self.enclosed_shells == 1 else "s",
+                   share_text,
+                   " Only the largest surfaces were checked, so there may be "
+                   "more." if self.enclosed_partial else ""))
 
         if self.loose_count:
             out.append(
@@ -185,7 +206,86 @@ def analyze(geometry, fuse_mm=FUSE_MM):
 
     bodies = _fuse_shells(v, t, labels, n_shells, fuse_mm)
     _describe_bodies(v, t, labels, bodies, volumes, cavity, report)
+    _find_enclosed(v, t, labels, volumes, cavity, report)
     return report
+
+
+# containment is only tested against the few biggest surfaces, which is where
+# the case that matters lives: something hidden inside a surface or a map
+MAX_CONTAINERS = 4
+ENCLOSURE_SAMPLES = 8
+# a containment test costs a handful of ray casts against one container mesh
+# and stops at the first point that is outside, so this can be generous
+MAX_ENCLOSURE_TESTS = 20000
+
+
+def _find_enclosed(vertices, triangles, labels, volumes, cavity, report):
+    """Find surfaces sealed inside another surface.
+
+    Exporting what is displayed is right, but ChimeraX will happily leave an
+    atomic model inside a density map or a cartoon inside a molecular surface,
+    where it cannot be seen and still costs filament and tool changes.
+    """
+    n_shells = len(volumes)
+    if n_shells < 2:
+        return
+
+    order = argsort(-np_abs(volumes))
+    containers = [int(s) for s in order[:MAX_CONTAINERS] if not cavity[s]]
+    if not containers:
+        return
+
+    lows, highs, tris = {}, {}, {}
+    for s in range(n_shells):
+        t = triangles[labels == s]
+        if len(t) == 0:
+            continue
+        pts = vertices[unique(t)]
+        lows[s], highs[s] = pts.min(axis=0), pts.max(axis=0)
+        tris[s] = t
+
+    counts = bincount(labels, minlength=n_shells)
+    enclosed = 0
+    enclosed_triangles = 0
+    tested = 0
+    for s in range(n_shells):
+        if s in containers or s not in tris or cavity[s]:
+            continue
+        for big in containers:
+            if big not in tris:
+                continue
+            if not ((lows[s] >= lows[big]).all() and (highs[s] <= highs[big]).all()):
+                continue
+            tested += 1
+            if tested > MAX_ENCLOSURE_TESTS:
+                report.enclosed_partial = True
+                break
+            if _all_points_inside(vertices, tris[s], tris[big]):
+                enclosed += 1
+                enclosed_triangles += int(counts[s])
+            break
+        if tested > MAX_ENCLOSURE_TESTS:
+            break
+
+    report.enclosed_shells = enclosed
+    report.enclosed_triangles = enclosed_triangles
+
+
+def _all_points_inside(vertices, tris_inner, tris_outer):
+    """True only if every sampled point of the inner surface is inside."""
+    from numpy import maximum as npmax, minimum as npmin
+    pts = vertices[unique(tris_inner)]
+    step = max(1, len(pts) // ENCLOSURE_SAMPLES)
+    sample = pts[::step][:ENCLOSURE_SAMPLES]
+    a = vertices[tris_outer[:, 0]]
+    b = vertices[tris_outer[:, 1]]
+    c = vertices[tris_outer[:, 2]]
+    lo = npmin(npmin(a, b), c)
+    hi = npmax(npmax(a, b), c)
+    for p in sample:
+        if not _point_inside(p, a, b, c, lo, hi):
+            return False
+    return True
 
 
 def _describe_bodies(vertices, triangles, labels, bodies, volumes, cavity,
