@@ -7,3 +7,5 @@ probes/roundtrip/
 src/docs/user/commands/*.html
 00000.log
 result.json
+fbdebug_tmp.py
+*_tmp.py
