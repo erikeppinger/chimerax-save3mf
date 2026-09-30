@@ -3,6 +3,10 @@
 Text for https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxsave3mf
 (Editor Actions → Edit this page). Icon: `docs/icon/save3mf-256.png`.
 
+The page renderer takes basic Markdown only: headings, lists, emphasis,
+inline code, fenced code and links all work, but **pipe tables do not** — they
+come out as one run-together paragraph. Keep this copy table-free.
+
 ---
 
 ## Short description
@@ -34,11 +38,14 @@ merged, and the model is scaled to millimetres and placed on the build plate.
 
 ### Colour reaches the printer
 
-| Your printer | `flavor` | The file carries |
-|---|---|---|
-| Multi-filament (MMU, toolchanger, AMS) | `prusa` (default), `bambu` | each colour painted onto the triangles as an extruder assignment |
-| Full colour (inkjet, binder jet, PolyJet) | `fullcolor` | a colour at every vertex, interpolated across each triangle |
-| Single filament | any | geometry; colour is ignored |
+- **Multi-filament printers** — MMU, toolchanger, AMS — with `flavor prusa`
+  (the default) or `flavor bambu`: each colour is painted onto the triangles as
+  an extruder assignment.
+- **Full-colour printers** — inkjet, binder jet, PolyJet — with
+  `flavor fullcolor`: a colour at every vertex, interpolated across each
+  triangle.
+- **Single-filament printers**: plain geometry, whichever flavor is used;
+  colour is simply ignored.
 
 On a multi-filament printer the slicer opens the file with each chain or
 region already assigned to its own filament — no manual splitting, no clicking
