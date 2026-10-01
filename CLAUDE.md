@@ -15,7 +15,7 @@ does not run. Use ChimeraX's interpreter for every script.
 
 ```powershell
 # install the bundle (MUST be run from the bundle directory - see Gotchas)
-cd C:\Users\Erik\Desktop\chimerax-3mf
+cd C:\Users\Erik\Dropbox\Daten-IMB-EE\3D-printing-tools\chimerax-3mf
 & "C:\Program Files\ChimeraX 1.12\bin\ChimeraX-console.exe" --nogui --exit --silent --cmd "devel install . exit true"
 
 # full test run: install integrity, export tests, slicer acceptance, wheel
