@@ -5,8 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 A ChimeraX bundle that saves the displayed scene as a 3MF file for 3D printing,
-carrying ChimeraX colours through as per-triangle extruder painting so a
-multi-material slicer opens the file already assigned.
+carrying ChimeraX colours through: as per-triangle extruder painting so a
+multi-material slicer opens the file already assigned, or (`flavor fullcolor`)
+as a colour at every vertex for full-colour printers.
 
 ## Commands
 
@@ -14,14 +15,13 @@ There is no system Python: the `python` on PATH is the Microsoft Store stub and
 does not run. Use ChimeraX's interpreter for every script.
 
 ```powershell
-# install the bundle (MUST be run from the bundle directory - see Gotchas)
-cd C:\Users\Erik\Dropbox\Daten-IMB-EE\3D-printing-tools\chimerax-3mf
+# install the bundle - run from the repository root (see Gotchas)
 & "C:\Program Files\ChimeraX 1.12\bin\ChimeraX-console.exe" --nogui --exit --silent --cmd "devel install . exit true"
 
 # full test run: install integrity, export tests, slicer acceptance, wheel
 .\tests\run_all.ps1
 
-# just the export suite (17 checks); writes tests/out/results.json
+# just the export suite; writes tests/out/results.json
 & "C:\Program Files\ChimeraX 1.12\bin\ChimeraX-console.exe" --nogui --exit --silent --script tests\test_export.py
 
 # build a wheel into dist/
@@ -72,13 +72,17 @@ layout* alone decides which one understands a file — extra metadata cannot
 bridge it. `probes/RESULTS.md` records the experiments that established this
 and is the first thing to read before changing `writer3mf.py`.
 
-The exporter writes colour as per-triangle painting on one watertight mesh
+For filament printers (`flavor prusa`, the default, and `bambu`) the exporter
+writes colour as per-triangle painting on one watertight mesh
 (`_painted_package`), which is what slicers' own paint tools produce:
 `slic3rpe:mmu_segmentation` for PrusaSlicer, `paint_color` for Bambu/Orca,
 identical encoding. Splitting geometry into per-colour parts also works
 (`_prusa_package`, `_bambu_package`, reached by `paint false` or automatically
 above 15 colours) but leaves open edges between patches and a repair warning on
 each one.
+
+`flavor fullcolor` (`_fullcolor_package`) instead writes one mesh with a colour
+per vertex, for full-colour printers and 3MF viewers.
 
 ### Facts established by experiment, not documentation
 
@@ -92,8 +96,9 @@ post without re-running the probes.
   print with filament 1, silently. Verified by reading tool changes per Z band
   out of real G-code (probe I). This is why print time plateaus past ~5 colours
   and why `printcost` models a tool count.
-- **PrusaSlicer ignores `m:colorgroup` and `basematerials`** on import; both
-  are written anyway for generic viewers, harmlessly.
+- **PrusaSlicer ignores `m:colorgroup` and `basematerials`** on import. The
+  filament flavours write them as well for generic viewers; for `fullcolor`
+  the per-vertex `m:colorgroup` is the colour payload itself.
 - **18.4 s per tool change** on an Original Prusa XL at 0.20 mm, fitted over
   eight colour counts. The tool-change count itself is extruders-per-layer less
   one, summed over layers, which matches G-code within ~1%.
@@ -129,8 +134,8 @@ post without re-running the probes.
 
 ## Testing philosophy
 
-Tests assert on exported files, not internal state. The suite was itself
-validated by mutation: reintroducing the negative-coordinate bug failed 7 of
-17 checks with the correct diagnosis. There is no XSD validation — no schema
+Tests assert on exported files, not internal state. Validate a new check by
+mutation: reintroduce the bug it guards against and confirm the suite fails
+with the right diagnosis. There is no XSD validation — no schema
 ships with the project and hand-writing one would be theatre;
 `tools/validate_3mf.py` checks what has actually gone wrong here instead.
