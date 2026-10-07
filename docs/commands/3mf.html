@@ -39,7 +39,9 @@ address { margin-top: 2.5em; font-size: 85%; color: #666; font-style: normal; }
 Saves the scene as a <a href="https://3mf.io/specification/">3MF</a> file,
 carrying the colouring with it: as extruder assignments for a multi-filament
 printer, or as a colour at every vertex for a full-colour printer. See
-<a href="#flavors">Flavours</a> for which to use.
+<a href="#flavors">Flavours</a> for which to use, and
+<a href="3mf-printing.html">Printing protein models</a> for a worked example
+and practical tips.
 </p>
 
 <h4>save</h4>
@@ -53,6 +55,7 @@ printer, or as a colour at every vertex for a full-colour printer. See
 &nbsp;[&nbsp;<b>maxColors</b>&nbsp;<i>N</i>&nbsp;]
 &nbsp;[&nbsp;<b>flavor</b>&nbsp;prusa|bambu|fullcolor&nbsp;]
 &nbsp;[&nbsp;<b>paint</b>&nbsp;true|false&nbsp;]
+&nbsp;[&nbsp;<b>smoothness</b>&nbsp;<i>mm</i>|off&nbsp;]
 &nbsp;[&nbsp;<b>check</b>&nbsp;true|false&nbsp;]
 </blockquote>
 
@@ -91,6 +94,11 @@ mesh (default) or, with <b>false</b>, split the mesh into named parts
 instead. Painting keeps the mesh whole; splitting leaves open edges between
 the parts but gives each a name in the slicer's part list.</li>
 
+<li><b>smoothness</b> &ndash; the deepest flat facet allowed in the print,
+in millimetres (default 0.05). Where ChimeraX's screen tessellation would be
+coarser than that at the chosen size, the export is made finer; <b>off</b>
+exports exactly what is drawn. See <a href="#smoothness">Smoothness</a>.</li>
+
 <li><b>check</b> &ndash; whether to report printability problems (default
 <b>true</b>).</li>
 </ul>
@@ -113,6 +121,7 @@ at negative x or y is off the build plate.
 &nbsp;[&nbsp;<b>scale</b>&nbsp;<i>mm-per-&#8491;</i>&nbsp;]
 &nbsp;[&nbsp;<b>layerHeight</b>&nbsp;<i>mm</i>&nbsp;]
 &nbsp;[&nbsp;<b>tools</b>&nbsp;<i>N</i>&nbsp;]
+&nbsp;[&nbsp;<b>smoothness</b>&nbsp;<i>mm</i>|off&nbsp;]
 </blockquote>
 
 <p>
@@ -136,6 +145,11 @@ about 3h 57m spent changing tools (774 changes on a 5-tool printer)
 With <b>maxColors</b> <i>N</i> it shows that exact palette instead, with the
 area share, the number of layers each part appears in, and the tool changes it
 causes.
+</p>
+
+<p>
+It also says, at the size given, whether saving will
+<a href="#smoothness">smooth</a> the model and what that costs in triangles.
 </p>
 
 <a name="printcost"></a>
@@ -192,6 +206,48 @@ Colours are clustered in CIELAB rather than RGB, weighted by triangle area, so
 merging follows what the eye calls similar and a large surface is not merged
 away in favour of a few tiny ligand triangles. Each part keeps a colour that
 actually appears in the scene rather than a cluster average.
+</p>
+
+<a name="smoothness"></a>
+<h4>Smoothness at print scale</h4>
+
+<p>
+ChimeraX draws for the screen. A pseudobond is a 10-sided cylinder, a bond or
+atom a few dozen triangles, a ribbon tube a dozen sides around. At screen size
+nobody sees the flats, but scaled to a print they become features: a 0.6
+&#8491; support at 200 mm is a 3.5 mm-radius prism whose flats sit 0.17 mm
+inside the true circle &ndash; almost a whole 0.2 mm layer, and plainly
+visible.
+</p>
+
+<p>
+Each export therefore measures how deep the flat facets are at the chosen
+size. Where they exceed <b>smoothness</b> (0.05 mm by default, well under a
+layer), it raises the number of sides and triangles for just those kinds of
+geometry, exports, and then restores the previous settings, so the display is
+left as it was. The log says so before the file is written:
+</p>
+
+<pre>
+Smoothing for print. At 5.82 mm/&#8491; the flat facets ChimeraX draws would be
+up to 0.17 mm deep (supports 0.17 mm, ribbons 0.10 mm), more than the 0.05 mm
+target. Exporting with supports 10 &rarr; 20 sides, ribbons 16 &rarr; 24 sides,
+20 &rarr; 30 divisions (about 39,008 &rarr; 86,888 triangles). The display is
+left as it is; smoothness off exports exactly what is on screen.
+</pre>
+
+<p>
+and the export report states the result. <b>3mf palette</b> with the same
+<b>size</b> shows this in advance, without writing anything. A small print
+needs nothing: the same model at 100 mm is already within the target and is
+exported as drawn.
+</p>
+
+<p>
+Atoms, bonds, pseudobonds (supports, struts) and ribbons are smoothed this
+way. Molecular and map surfaces keep the resolution they were computed at; if
+theirs is too coarse for the print the log says so and suggests how to
+recompute them finer (for example <b>surface gridSpacing 0.3</b>).
 </p>
 
 <a name="flavors"></a>
@@ -257,6 +313,15 @@ used automatically above 15 colours, which is the most a slicer can paint; the
 log says so when that happens.
 </p>
 
+<p>
+Slicers do not always fill a painted colour all the way through. The Original
+Prusa XL profiles set a maximum width of 5 mm for a painted region, so each
+colour becomes a shell around a neighbouring colour &ndash; invisible from
+outside, but not if the model is cut. See
+<a href="3mf-printing.html#slicer">slicer settings</a> for this and for beam
+interlocking, which also acts on painted boundaries.
+</p>
+
 <a name="printability"></a>
 <h4>Printability report</h4>
 
@@ -297,12 +362,18 @@ thickened ribbons, solvent removal &ndash; use the
 presets</a> bundle. This bundle only measures and reports.
 </p>
 
+<p>
+After applying a preset, look over the supports it adds before exporting:
+<a href="3mf-printing.html#supports">Checking the supports</a> shows how to
+find and remove one that is badly placed for printing.
+</p>
+
 <a name="related"></a>
 <h4>Related</h4>
 
 <p>
 <a href="https://github.com/erikeppinger/support-optimizer">Support
-Optimizer</a> is a browser-based tool that takes the file saved here and
+Optimizer</a>, in the browser or as a desktop app, takes the file saved here and
 prepares it for the printer: it seals interior cavities so support material
 cannot be trapped inside them, searches for an orientation with fewer
 overhangs, and previews the support paths. The cavities reported above are

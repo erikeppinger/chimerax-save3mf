@@ -4,7 +4,7 @@ build-backend = "chimerax.bundle_builder.cx_pep517"
 
 [project]
 name = "ChimeraX-Save3MF"
-version = "0.2.1"
+version = "0.2.2"
 description = "Save ChimeraX scenes as 3MF files for 3D printing, with colors carried through as painted extruders"
 authors = [{ name = "Erik Eppinger" }]
 license = "MIT"
@@ -36,7 +36,12 @@ file with each chain or region already assigned to its own filament.
 
 Also reports what a slicer will make of the geometry before you print it:
 disconnected pieces, meshes that are not watertight, geometry sealed invisibly
-inside other geometry, and how much print time each color costs.
+inside other geometry, and how much print time each color costs. Large
+prints are exported more finely than ChimeraX draws them on screen, so the flat
+facets of cylinders and ribbons do not show in the print.
+
+The help includes a worked example, from a PDB entry to a four-colour print,
+with tips for each kind of model.
 
 Developed with AI assistance (Claude); every format decision was verified
 against PrusaSlicer, Bambu Studio and OrcaSlicer.

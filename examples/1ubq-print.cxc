@@ -1,0 +1,27 @@
+# Ubiquitin (PDB 1ubq) as a four-colour print.
+# The worked example from the Save3MF help page ("help 3mf", then
+# "Printing protein models"). Needs the NIH 3D print presets bundle.
+#
+#   open 1ubq-print.cxc
+#
+# Fetches 1ubq from the PDB, so needs a network connection.
+
+open 1ubq
+
+# printable ribbons, with hydrogen bonds drawn as supports
+preset "nih3d" "ribbon by secondary structure (printable)"
+
+# a support badly placed for printing: Met1 N - Val17 O
+delete pbonds /A:1@N /A:17@O
+
+# colour the model, then the supports last, in a colour of their own
+color /A cornflowerblue
+color strand gold
+color helix tomato
+color lightgray target p halfbond false
+
+# preview colours, tool-change time and smoothing; writes nothing
+3mf palette maxColors 4 size 100 tools 4
+
+# export for PrusaSlicer (flavor bambu for Bambu Studio and OrcaSlicer)
+save ~/Desktop/1ubq.3mf size 100 maxColors 4

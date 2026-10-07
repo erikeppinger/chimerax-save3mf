@@ -271,6 +271,92 @@ def test_print_cost_model():
           "%d changes" % cost.tool_changes)
 
 
+def _file_flats(path, kind):
+    """Flat depth (mm) measured in a saved file, treating all of it as one
+    kind of geometry - only meaningful for a scene of one kind."""
+    import zipfile
+    import xml.etree.ElementTree as ET
+    from numpy import array, float32, int32, zeros
+    from chimerax.save3mf import scene as scene_module, smoothness
+    CORE = "{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}"
+    with zipfile.ZipFile(path) as z:
+        root = ET.fromstring(z.read("3D/3dmodel.model"))
+    v = array([(float(e.get("x")), float(e.get("y")), float(e.get("z")))
+               for e in root.iter(CORE + "vertex")], float32)
+    t = array([(int(e.get("v1")), int(e.get("v2")), int(e.get("v3")))
+               for e in root.iter(CORE + "triangle")], int32)
+    g = scene_module.SceneGeometry(v, t, zeros((len(t), 4)), [(kind, len(t))],
+                                   zeros(len(t), int32))
+    return smoothness.measure(g).depth.get(kind, 0.0), len(t)
+
+
+def _lod_state():
+    from chimerax.atomic.structure import level_of_detail
+    from chimerax.atomic import AtomicStructure
+    lod = level_of_detail(session)                         # noqa: F821
+    sides = [m.ribbon_xs_mgr.params[m.ribbon_xs_mgr.STYLE_ROUND]["sides"]
+             for m in session.models.list()               # noqa: F821
+             if isinstance(m, AtomicStructure)]
+    return (lod.pseudobond_sides, lod.atom_fixed_triangles,
+            lod.bond_fixed_triangles, lod.ribbon_fixed_divisions, sides)
+
+
+def test_smoothness():
+    """Large prints are exported finer than the screen draws them, small ones
+    are left alone, and the display settings come back unchanged."""
+    from chimerax.save3mf.smoothness import DEFAULT_SMOOTHNESS
+    # Thick hydrogen bonds alone, as the NIH presets draw them. A pseudobond
+    # is shown only while both its atoms are, so the atoms stay displayed but
+    # as tiny tetrahedra: their edges are all sharp corners, which the flat
+    # measurement ignores, so only the pseudobonds are measured.
+    scene("open 1ubq", "delete solvent", "hide cartoon", "hide atoms",
+          "hbonds radius 0.6 dashes 0", "show @N,O atoms", "style sphere",
+          "size @N,O atomRadius 0.01", "graphics quality atomTriangles 4")
+    before = _lod_state()
+
+    raw = export("t_smooth_off.3mf", "size 200 smoothness off")
+    raw_depth, raw_tris = _file_flats(raw, "pbonds")
+    smooth = export("t_smooth_on.3mf", "size 200")
+    depth, tris = _file_flats(smooth, "pbonds")
+    check("smoothness: pbond flats at 200 mm exceed the target as displayed",
+          raw_depth > DEFAULT_SMOOTHNESS, "%.3f mm" % raw_depth)
+    check("smoothness: exported flats are within the target",
+          depth <= DEFAULT_SMOOTHNESS * 1.1,
+          "%.3f mm (was %.3f)" % (depth, raw_depth))
+    check("smoothness: finer export has more triangles", tris > raw_tris,
+          "%d vs %d" % (tris, raw_tris))
+    check("smoothness: display settings are restored after export",
+          _lod_state() == before, "%s -> %s" % (before, _lod_state()))
+
+    small = export("t_smooth_small.3mf", "size 40")
+    small_off = export("t_smooth_small_off.3mf", "size 40 smoothness off")
+    check("smoothness: a small print is left as displayed",
+          _file_flats(small, "pbonds")[1] == _file_flats(small_off, "pbonds")[1])
+
+    coarse = export("t_smooth_coarse.3mf", "size 200 smoothness 0.15")
+    check("smoothness: a looser target needs fewer triangles",
+          raw_tris <= _file_flats(coarse, "pbonds")[1] < tris)
+
+
+def test_smoothness_ribbons():
+    """Ribbons are smoothed through the cartoon cross-section and divisions."""
+    from chimerax.save3mf.smoothness import DEFAULT_SMOOTHNESS
+    scene("open 1ubq", "delete solvent", "hide atoms", "cartoon")
+    before = _lod_state()
+    # a plain cartoon is thin; at 400 mm its flats are well over the target
+    raw = export("t_ribbon_off.3mf", "size 400 smoothness off")
+    smooth = export("t_ribbon_on.3mf", "size 400")
+    raw_depth, raw_tris = _file_flats(raw, "ribbons")
+    depth, tris = _file_flats(smooth, "ribbons")
+    check("smoothness: ribbon flats exceed the target as displayed",
+          raw_depth > DEFAULT_SMOOTHNESS, "%.3f mm" % raw_depth)
+    check("smoothness: ribbon flats come within the target",
+          depth <= DEFAULT_SMOOTHNESS * 1.25,
+          "%.3f -> %.3f mm" % (raw_depth, depth))
+    check("smoothness: ribbon settings are restored",
+          _lod_state() == before, "%s -> %s" % (before, _lod_state()))
+
+
 TESTS = [
     test_surface_geometry,
     test_size_and_placement,
@@ -287,6 +373,8 @@ TESTS = [
     test_palette_command,
     test_empty_scene,
     test_print_cost_model,
+    test_smoothness,
+    test_smoothness_ribbons,
 ]
 
 

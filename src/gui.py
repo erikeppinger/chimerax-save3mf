@@ -20,6 +20,7 @@ SLICERS = [
 
 DEFAULT_SIZE_MM = 80.0
 DEFAULT_MAX_COLORS = 5
+DEFAULT_SMOOTHNESS_MM = 0.05
 
 
 class SaveOptionsWidget(QFrame):
@@ -34,6 +35,7 @@ class SaveOptionsWidget(QFrame):
         self.setLayout(layout)
 
         layout.addLayout(self._size_section())
+        layout.addLayout(self._smoothness_section())
         layout.addLayout(self._color_section())
         layout.addLayout(self._slicer_section())
 
@@ -77,6 +79,27 @@ class SaveOptionsWidget(QFrame):
         grid.addWidget(self.scale_value, 1, 2, alignment=Qt.AlignLeft)
         grid.setColumnStretch(3, 1)
         return grid
+
+    def _smoothness_section(self):
+        row = QHBoxLayout()
+        row.setSpacing(4)
+        self.smooth = QCheckBox("Smooth for printing: flats at most")
+        self.smooth.setChecked(True)
+        self.smooth.setToolTip(
+            "ChimeraX draws cylinders and spheres with few sides, which shows "
+            "as flat facets once the model is scaled up. Exports finer where "
+            "needed and says so in the log; the display is not changed.")
+        self.smooth.toggled.connect(self._update_enabled)
+        self.smooth_value = QDoubleSpinBox()
+        self.smooth_value.setRange(0.005, 1.0)
+        self.smooth_value.setDecimals(3)
+        self.smooth_value.setSingleStep(0.01)
+        self.smooth_value.setValue(DEFAULT_SMOOTHNESS_MM)
+        self.smooth_value.setSuffix(" mm")
+        row.addWidget(self.smooth, alignment=Qt.AlignLeft)
+        row.addWidget(self.smooth_value)
+        row.addStretch(1)
+        return row
 
     def _color_section(self):
         box = QVBoxLayout()
@@ -135,6 +158,7 @@ class SaveOptionsWidget(QFrame):
     def _update_enabled(self, *args):
         self.size_value.setEnabled(self.longest_edge.isChecked())
         self.scale_value.setEnabled(self.by_scale.isChecked())
+        self.smooth_value.setEnabled(self.smooth.isChecked())
         splitting = self.colors.isChecked()
         self.merge.setEnabled(splitting)
         self.merge_count.setEnabled(splitting and self.merge.isChecked())
@@ -154,6 +178,11 @@ class SaveOptionsWidget(QFrame):
             args.append("size %g" % self.size_value.value())
         elif self.scale_value.value() != 1.0:
             args.append("scale %g" % self.scale_value.value())
+
+        if not self.smooth.isChecked():
+            args.append("smoothness off")
+        elif abs(self.smooth_value.value() - DEFAULT_SMOOTHNESS_MM) > 1e-9:
+            args.append("smoothness %g" % self.smooth_value.value())
 
         if not self.colors.isChecked():
             args.append("colors false")

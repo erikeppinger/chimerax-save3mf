@@ -3,7 +3,9 @@
 and what merging them down would cost, before writing any file.
 """
 
-from chimerax.core.commands import CmdDesc, FloatArg, ModelsArg, PositiveIntArg
+from chimerax.core.commands import (
+    CmdDesc, EnumOf, FloatArg, ModelsArg, Or, PositiveIntArg,
+)
 from chimerax.core.errors import UserError
 
 # part counts worth offering; filtered to those below the distinct count
@@ -11,7 +13,7 @@ LADDER = (2, 3, 4, 5, 6, 8, 12, 16, 24, 32)
 
 
 def palette(session, models=None, max_colors=None, size=None, scale=None,
-            layer_height=None, tools=None):
+            layer_height=None, tools=None, smoothness=None):
     from . import colors as color_module, printcost, scene
 
     geometry = scene.collect_geometry(session, models)
@@ -21,8 +23,9 @@ def palette(session, models=None, max_colors=None, size=None, scale=None,
     geometry = scene.weld_vertices(geometry)
     # print cost depends on how tall the print is, so scale it the way the
     # export would
-    geometry, _ = scene.place_for_printing(
+    geometry, used_scale = scene.place_for_printing(
         geometry, scale=1.0 if scale is None else scale, size=size)
+    _preview_smoothness(session, geometry, used_scale, smoothness)
 
     regions = color_module.build_regions(geometry, max_colors=max_colors)
     logger = session.logger
@@ -93,6 +96,35 @@ def palette(session, models=None, max_colors=None, size=None, scale=None,
     logger.info("Export with:  save file.3mf maxColors N")
 
 
+def _preview_smoothness(session, geometry, used_scale, smoothness):
+    """Say ahead of the export whether saving will smooth the model, and
+    what that costs in triangles, at the size being previewed."""
+    from . import log, smoothness as smooth
+    from .writer3mf import smoothness_target, _thousands
+    target = smoothness_target(smoothness)
+    if target is None:
+        return
+    depths = smooth.measure(geometry)
+    p = smooth.plan(session, depths, target)
+    if p.needed:
+        log.info(
+            session,
+            "At %.3g mm/\N{ANGSTROM SIGN}, flat facets would be up to %.2f mm "
+            "deep (%s). Saving smooths them to the %.2g mm target: %s, about "
+            "%s \N{RIGHTWARDS ARROW} %s triangles (%s to export as displayed)."
+            % (used_scale, depths.worst(kinds=p.changes),
+               log.escape(smooth.describe_depths(depths, kinds=p.changes)),
+               target, log.escape(smooth.describe_changes(p)),
+               _thousands(p.triangles_before), _thousands(p.triangles_after),
+               log.help_link("smoothness", "smoothness off")),
+            html=True)
+    rough = p.unreachable()
+    if rough:
+        log.warn(session, "Flat facets at this size: %s. %s"
+                 % (smooth.describe_depths(depths, kinds=rough),
+                    smooth.surface_advice(rough)))
+
+
 def _log_palette_with_cost(session, regions, cost):
     """The palette table, with what each part costs in tool changes."""
     from .colors import _escape
@@ -142,7 +174,8 @@ def _hex(rgb):
 palette_desc = CmdDesc(
     keyword=[('models', ModelsArg), ('max_colors', PositiveIntArg),
              ('size', FloatArg), ('scale', FloatArg),
-             ('layer_height', FloatArg), ('tools', PositiveIntArg)],
+             ('layer_height', FloatArg), ('tools', PositiveIntArg),
+             ('smoothness', Or(EnumOf(('off',)), FloatArg))],
     synopsis="Preview the color parts a 3MF export would produce",
 )
 

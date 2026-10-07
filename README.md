@@ -80,6 +80,14 @@ help 3mf
 or `help 3mf palette` to land on that command's section, or
 `open help:user/commands/3mf.html` for the page directly.
 
+A second page, **Printing protein models**, is linked from the first (or
+`open help:user/commands/3mf-printing.html`). It walks ubiquitin (1ubq) from
+the PDB to a four-colour print — NIH preset, checking the supports, colouring,
+preview, export, Support Optimizer, slicer — with every command clickable, and
+collects practical tips per representation and the slicer settings that act on
+painted files. The same steps are in
+[`examples/1ubq-print.cxc`](examples/1ubq-print.cxc).
+
 Note the `help:` prefix in the last form: without it ChimeraX reads the
 argument as a command name and reports "No help found".
 
@@ -94,7 +102,7 @@ route that works.
 ```
 save PATH.3mf [models SPEC] [scale N] [size N] [colors true|false]
               [maxColors N] [flavor prusa|bambu|fullcolor] [paint true|false]
-              [check true|false]
+              [smoothness MM|off] [check true|false]
 ```
 
 - `models` — which models to export; default is everything displayed
@@ -105,10 +113,46 @@ save PATH.3mf [models SPEC] [scale N] [size N] [colors true|false]
 - `flavor` — what kind of printer the file is for (default `prusa`)
 - `paint` — paint extruders per triangle (default), or `false` to split the
   mesh into named parts instead
+- `smoothness` — deepest flat facet allowed at print size, in mm (default
+  0.05); `off` exports exactly what is drawn. See [Smoothness](#smoothness)
 - `check` — run the printability check (default true)
 
 The model sits in the positive octant with its lowest point at z = 0.
 Coordinates must not go negative or slicers place the model off the bed.
+
+### Smoothness
+
+ChimeraX tessellates for the screen: a pseudobond is a 10-sided cylinder, a
+ribbon tube a dozen sides around. Scaled up for printing, those flats become
+features — a 0.6 Å support at 200 mm is a 3.5 mm-radius prism whose flats sit
+0.17 mm inside the circle, nearly a full 0.2 mm layer, and they show in the
+print.
+
+So each export measures how deep the flats are **at the chosen size** and,
+where they exceed `smoothness` (0.05 mm by default), raises the sides and
+triangles of just those kinds of geometry, exports, and restores the previous
+settings — the display is left as it was. The log says so *before* the file is
+written:
+
+```
+Smoothing for print. At 5.82 mm/Å the flat facets ChimeraX draws would be up
+to 0.17 mm deep (supports 0.17 mm, ribbons 0.10 mm), more than the 0.05 mm
+target. Exporting with supports 10 → 20 sides, ribbons 16 → 24 sides,
+20 → 30 divisions (about 39,008 → 86,888 triangles). The display is left as
+it is; smoothness off exports exactly what is on screen.
+```
+
+`3mf palette` at the same `size` shows this in advance without writing
+anything. A small print needs nothing: the same model at 100 mm is already
+within the target and is exported as drawn.
+
+The depth is measured from the mesh rather than predicted from settings: for
+two triangles meeting at a crease angle θ, a face of width *h* across the edge
+sits at most *h*·θ/8 inside the curve it approximates (corners sharper than
+60°, such as a ribbon's rim, are real edges and not counted). Atoms, bonds,
+pseudobonds and ribbons are smoothed through ChimeraX's level-of-detail
+settings; molecular and map surfaces keep the resolution they were computed at,
+so for those the log reports the depth and suggests recomputing them finer.
 
 ### Colours become printable colours
 
@@ -138,7 +182,7 @@ Neither applies to `flavor fullcolor`, which writes every colour as it is.
 
 ```
 3mf palette [models SPEC] [maxColors N] [size N] [scale N]
-            [layerHeight N] [tools N]
+            [layerHeight N] [tools N] [smoothness MM|off]
 ```
 
 Prints the colour regions the scene would produce and what each merge level
@@ -202,7 +246,11 @@ chain against the calibration runs.
 | `src/colors.py` | colour regions, CIELAB clustering, palette rendering |
 | `src/printcheck.py` | printability report (never modifies geometry) |
 | `src/printcost.py` | tool-change estimate behind the print-cost flag |
+| `src/smoothness.py` | flat-facet depth at print size, and finer tessellation for the export |
+| `src/log.py` | log messages with clickable help links |
 | `docs/commands/3mf.html` | user documentation, installed into ChimeraX help |
+| `docs/commands/3mf-printing.html` | worked example (1ubq) and printing tips, installed alongside |
+| `examples/1ubq-print.cxc` | the worked example as a ChimeraX script |
 | `probes/` | slicer experiments and [RESULTS.md](probes/RESULTS.md) — why the file looks the way it does |
 | `tools/` | probe generators, 3MF validator and inspector, cost-model check |
 | `tests/` | `run_all.ps1` driver, headless export suite, widget and palette captures |
@@ -325,6 +373,24 @@ Preparing a structure for printing (struts between disjoint pieces, thickened
 ribbons, solvent removal) is what the
 [NIH 3D print presets](https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxnihpresets)
 bundle is for. The exporter just tells you when you need it.
+
+After applying a preset, look over the supports it adds before exporting. It
+draws hydrogen bonds as thick cylinders and adds struts where pieces need
+holding together; most help, but an occasional one is badly placed for
+printing — pinning a terminus at an awkward angle, say, or creating an
+overhang that needs support material. Hover over it to see which two atoms it
+joins, then remove it by naming them. For ubiquitin (PDB 1ubq), for example,
+the hydrogen bond between Met1 N and Val17 O:
+
+```
+delete pbonds /A:1@N /A:17@O
+```
+
+or, for any structure, Ctrl+click the support and use `delete pbonds sel`. To keep it in the session but out
+of the file, hide it instead (`hide /A:1@N /A:17@O pbonds`) — only what is
+displayed is exported. `delete pbonds` removes every pseudobond whose two ends
+are both in the specification, so a residue-level spec such as `/A:1,17`
+removes all supports between those residues.
 
 ## Related
 

@@ -23,7 +23,7 @@ class _Save3MFAPI(BundleAPI):
             @property
             def save_args(self):
                 from chimerax.core.commands import (
-                    BoolArg, EnumOf, FloatArg, ModelsArg, PositiveIntArg,
+                    BoolArg, EnumOf, FloatArg, ModelsArg, Or, PositiveIntArg,
                 )
                 from .writer3mf import FLAVORS
                 return {
@@ -35,6 +35,8 @@ class _Save3MFAPI(BundleAPI):
                     'max_colors': PositiveIntArg,
                     'flavor': EnumOf(FLAVORS),
                     'paint': BoolArg,
+                    # deepest flat facet allowed, in mm, or 'off'
+                    'smoothness': Or(EnumOf(('off',)), FloatArg),
                 }
 
             def save_args_widget(self, session):

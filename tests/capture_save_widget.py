@@ -44,6 +44,14 @@ w.colors.setChecked(False)
 w.check.setChecked(False)
 record("no colors, no check")
 
+w.smooth_value.setValue(0.1)
+record("+ coarser smoothing")
+
+w.smooth.setChecked(False)
+record("+ smoothing off")
+w.smooth.setChecked(True)
+w.smooth_value.setValue(0.05)
+
 # back to something representative for the screenshot
 w.colors.setChecked(True)
 w.check.setChecked(True)

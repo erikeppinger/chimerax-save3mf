@@ -67,7 +67,8 @@ FIRST_PART_OBJECT_ID = 10
 
 
 def write_3mf(session, path, models=None, scale=None, size=None, check=True,
-              colors=True, max_colors=None, flavor="prusa", paint=True):
+              colors=True, max_colors=None, flavor="prusa", paint=True,
+              smoothness=None):
     from chimerax.core.errors import UserError
     from . import colors as color_module, printcheck, scene
 
@@ -76,6 +77,7 @@ def write_3mf(session, path, models=None, scale=None, size=None, check=True,
         raise UserError("Unknown 3MF flavor '%s'; use one of: %s"
                         % (flavor, ", ".join(FLAVORS)))
     flavor = FLAVOR_ALIASES.get(flavor, flavor)
+    target = smoothness_target(smoothness)
 
     geometry = scene.collect_geometry(session, models)
     if geometry.triangle_count == 0:
@@ -87,6 +89,11 @@ def write_3mf(session, path, models=None, scale=None, size=None, check=True,
     geometry, used_scale = scene.place_for_printing(
         geometry, scale=1.0 if scale is None else scale, size=size)
 
+    depths = None
+    if target is not None:
+        geometry, before, depths = _smooth(session, models, geometry, before,
+                                           used_scale, target)
+
     report = printcheck.analyze(geometry)
 
     # Full colour is a different job from filament assignment: a full-colour
@@ -96,6 +103,7 @@ def write_3mf(session, path, models=None, scale=None, size=None, check=True,
         model_xml, extra = _fullcolor_package(session, geometry, colors)
         _write_package(path, model_xml, extra)
         _report_fullcolor(session, path, geometry, used_scale, before, colors)
+        _report_smoothness(session, depths, target)
         printcheck.log_report(session, report, quiet=not check)
         return
 
@@ -137,7 +145,87 @@ def write_3mf(session, path, models=None, scale=None, size=None, check=True,
 
     _report(session, path, geometry, used_scale, before, regions, flavor,
             painting)
+    _report_smoothness(session, depths, target)
     printcheck.log_report(session, report, quiet=not check)
+
+
+# --------------------------------------------------------------- smoothness
+
+def smoothness_target(smoothness):
+    """Target flat depth in mm, or None when smoothing is switched off."""
+    from .smoothness import DEFAULT_SMOOTHNESS
+    if smoothness is None:
+        return DEFAULT_SMOOTHNESS
+    if isinstance(smoothness, str):
+        return None                 # 'off'
+    if smoothness <= 0:
+        from chimerax.core.errors import UserError
+        raise UserError("smoothness is the deepest flat allowed, in mm; "
+                        "give a positive number, or 'off'")
+    return float(smoothness)
+
+
+def _smooth(session, models, geometry, before, used_scale, target):
+    """Re-collect the scene finer when its flats would show in the print.
+
+    Says what it is about to change before doing it, since it makes the file
+    larger than what is on screen would suggest.
+    """
+    from . import log, scene, smoothness
+    depths = smoothness.measure(geometry)
+    p = smoothness.plan(session, depths, target)
+    if not p.needed:
+        return geometry, before, depths
+
+    log.warn(
+        session,
+        "<b>Smoothing for print.</b> At %.3g mm/\N{ANGSTROM SIGN} the flat "
+        "facets ChimeraX draws would be up to %.2f mm deep (%s), more than "
+        "the %.2g mm target. Exporting with %s (about %s \N{RIGHTWARDS ARROW} "
+        "%s triangles). The display is left as it is; %s exports exactly what "
+        "is on screen."
+        % (used_scale, depths.worst(kinds=p.changes),
+           log.escape(smoothness.describe_depths(depths, kinds=p.changes)),
+           target, log.escape(smoothness.describe_changes(p)),
+           _thousands(p.triangles_before), _thousands(p.triangles_after),
+           log.help_link("smoothness", "smoothness off")),
+        html=True)
+
+    with smoothness.Applied(session, p):
+        finer = scene.collect_geometry(session, models)
+    before = finer.triangle_count
+    geometry = scene.weld_vertices(finer)
+    geometry, _ = scene.place_for_printing(geometry, scale=used_scale)
+    return geometry, before, smoothness.measure(geometry)
+
+
+def _report_smoothness(session, depths, target):
+    if depths is None or not depths.depth:
+        return
+    from . import log, smoothness
+    adjustable = depths.worst(kinds=smoothness.ADJUSTABLE)
+    if adjustable:
+        session.logger.info("Flats up to %.2f mm deep on %s (target %.2g mm)"
+                            % (adjustable, ", ".join(
+                                smoothness.LABELS[k] for k in depths.depth
+                                if k in smoothness.ADJUSTABLE), target))
+    rough = depths.above(target * 1.25)
+    if not rough:
+        return
+    fixed = [k for k in rough if k == "surfaces"]
+    capped = [k for k in rough if k != "surfaces"]
+    text = ("Still above the %.2g mm smoothness target: %s."
+            % (target, smoothness.describe_depths(depths, kinds=rough)))
+    if capped:
+        text += (" Finer tessellation stopped at the limit that keeps the "
+                 "file manageable; a smaller model needs less.")
+    if fixed:
+        text += " " + smoothness.surface_advice(fixed)
+    log.warn(session, text)
+
+
+def _thousands(n):
+    return "{:,}".format(int(n))
 
 
 # ------------------------------------------------------------------ helpers

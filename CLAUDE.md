@@ -54,6 +54,8 @@ The export is a pipeline, one module per stage, all under `src/`:
 scene.collect_geometry    walk displayed drawings -> triangle soup + colour per triangle
 scene.weld_vertices       merge coincident vertices so the mesh is connected
 scene.place_for_printing  scale to mm, move into the positive octant
+smoothness.measure/plan   flat-facet depth at print size; if too deep, finer
+                          tessellation, re-collect, settings restored after
 colors.build_regions      group triangles by colour, cluster in CIELAB if asked
 printcheck.analyze        measure printability (never modifies geometry)
 printcost.estimate        tool changes and the time they cost
