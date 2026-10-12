@@ -69,6 +69,23 @@ one stitched mesh, and the report is written around that:
 `3mf palette` previews the colour regions before you export, showing both what
 merging them costs perceptually (ΔE) and what it costs in print time.
 
+### Smooth at any print size
+
+ChimeraX draws cylinders and ribbons with few sides, which shows as flat
+facets once a model is scaled up for printing. Each export measures how deep
+the flats are at the chosen size and, where they would show (deeper than
+0.05 mm by default), exports supports, bonds, atoms and ribbons more finely –
+saying so in the log first, and leaving the display as it was.
+`smoothness off` exports exactly what is drawn.
+
+### Printing protein models
+
+The help includes a worked example – ubiquitin from the PDB to a four-colour
+print, every command clickable – with tips for each kind of model and the
+slicer settings that act on multi-colour files. It is also on GitHub, where
+everyone can contribute tips:
+[Printing protein models](https://github.com/erikeppinger/chimerax-save3mf/blob/main/docs/printing-protein-models.md).
+
 ### Verified against real slicers
 
 Colour handling in 3MF is barely documented and the published encoding tables
@@ -81,6 +98,9 @@ the repository. Output has been checked through to G-code on PrusaSlicer.
 - Source, issues and documentation:
   https://github.com/erikeppinger/chimerax-save3mf
 - `help 3mf` inside ChimeraX for the full option list
+- [Printing protein models](https://github.com/erikeppinger/chimerax-save3mf/blob/main/docs/printing-protein-models.md):
+  a worked example from a PDB entry to a multi-colour print, with tips for
+  each kind of model. Have a tip of your own? Contributions are welcome there.
 - Preparing structures for printing — struts, thickened ribbons, solvent
   removal — is the job of the
   [NIH 3D print presets](https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxnihpresets)

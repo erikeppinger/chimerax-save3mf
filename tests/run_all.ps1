@@ -4,6 +4,8 @@
         .\tests\run_all.ps1
 
     Stages, each of which fails the run:
+      0. docs             the help page generated from the printing tutorial
+                          must match its Markdown source
       1. install          devel install must succeed AND actually replace the
                           installed files - a failed build silently leaves the
                           previous version in place, so a whole test run can
@@ -74,15 +76,37 @@ function Invoke-Tool {
 # so this must run from the bundle directory or the wheel build fails
 Set-Location $Bundle
 
+# ------------------------------------------------------------------- 0. docs
+# docs/commands/3mf-printing.html is generated from
+# docs/printing-protein-models.md; an edit to one alone ships a stale page
+Write-Host "`n== tutorial page ==" -ForegroundColor Cyan
+$docsOut = Invoke-Tool $Python @("$Bundle\tools\build_tutorial.py", "--check")
+if ($script:LastToolExit -ne 0) {
+    Fail "tutorial page" (($docsOut | Select-Object -Last 1) -join "")
+} else {
+    Pass "tutorial page" "matches docs/printing-protein-models.md"
+}
+
 # ---------------------------------------------------------------- 1. install
 Write-Host "`n== install ==" -ForegroundColor Cyan
-$installLog = Invoke-Tool $ChimeraX @("--nogui", "--exit", "--silent", "--cmd",
-                                      "devel install $Bundle exit true")
-$installOk = ($script:LastToolExit -eq 0) -and
-             -not ($installLog | Select-String -Quiet "RuntimeError|Traceback")
+# The bundle builder deletes and recreates build\ on every run, and when the
+# repository sits in a synced folder (Dropbox) the sync client briefly locks
+# the fresh directories: setuptools then fails to remove build\bdist.* with
+# WinError 32 and the builder reports only "Failed to build wheel". A real
+# build error fails every time, the lock only now and then - so retry.
+$installOk = $false
+foreach ($attempt in 1..3) {
+    $installLog = Invoke-Tool $ChimeraX @("--nogui", "--exit", "--silent", "--cmd",
+                                          "devel install $Bundle exit true")
+    $installOk = ($script:LastToolExit -eq 0) -and
+                 -not ($installLog | Select-String -Quiet "RuntimeError|Traceback")
+    if ($installOk) { break }
+}
 if (-not $installOk) {
-    Fail "install" "devel install did not succeed; everything below would test stale code"
+    Fail "install" "devel install did not succeed in 3 attempts; everything below would test stale code"
     $installLog | Select-Object -Last 15 | ForEach-Object { Write-Host "      $_" }
+} elseif ($attempt -gt 1) {
+    Pass "install" "(attempt $attempt; the build folder was locked, see the comment in run_all.ps1)"
 } else {
     Pass "install"
 }

@@ -1,0 +1,51 @@
+name: Printing tip
+description: Suggest a tip for the "Printing protein models" page
+title: "Printing tip: "
+labels: ["printing tip"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing what worked. Tips are checked before they go on
+        [the page](https://github.com/erikeppinger/chimerax-save3mf/blob/main/docs/printing-protein-models.md),
+        and ChimeraX commands are run, so a little detail on how you got there
+        helps a lot.
+  - type: dropdown
+    id: section
+    attributes:
+      label: Which kind of model is it about?
+      options:
+        - All models
+        - Surface models
+        - Cartoon and ribbon models
+        - Space-filling and ball-and-stick models
+        - Materials
+        - Slicer settings
+        - The worked example
+    validations:
+      required: true
+  - type: textarea
+    id: tip
+    attributes:
+      label: The tip
+      description: What to do, and why it helps. Put any ChimeraX commands on lines of their own.
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: What you printed it on
+      description: Structure (PDB ID if public), printer, slicer and version, material.
+      placeholder: "1ubq, Prusa XL 5-tool, PrusaSlicer 2.9, PLA"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: What happened
+      description: The result, ideally compared with what happened without the tip. Photos are welcome.
+  - type: input
+    id: source
+    attributes:
+      label: Source
+      description: If the tip comes from a guide, paper or forum post, where.

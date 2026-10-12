@@ -113,6 +113,13 @@ post without re-running the probes.
   wherever ChimeraX was launched. A failed install leaves the previous version
   installed, so tests then pass against stale code — `tests/run_all.ps1`
   checks installed bytes against `src/` for exactly this reason.
+- **`devel install` fails now and then with "Failed to build wheel" and no
+  reason.** The repository lives in Dropbox; the builder deletes and recreates
+  `build\` on every run, Dropbox locks the fresh folders while indexing, and
+  setuptools' cleanup hits WinError 32 – a message the builder swallows. A
+  Dropbox ignore flag on `build\` cannot help, since the folder (and the flag)
+  is deleted each time. Rerun; `tests/run_all.ps1` retries up to three times.
+  A real build error fails every attempt.
 - **Flush graphics before reading drawings.** ChimeraX commands mark the scene
   changed but rebuild drawings on the next frame, and nothing draws a frame in
   `--nogui`. `scene._flush_pending_graphics` exists because an export right
@@ -133,6 +140,12 @@ post without re-running the probes.
   name and reports "No help found". Bundle commands do not appear in Help →
   User Guide's index in 1.12: the injection looks for a `<div id="clist">`
   that the shipped index page lacks.
+
+- **The tutorial has one source.** `docs/printing-protein-models.md` is what
+  GitHub shows and what contributors edit; `docs/commands/3mf-printing.html`
+  is generated from it by `tools/build_tutorial.py` (```chimerax blocks become
+  clickable `cxcmd:` links, repository links are mapped in its `LINKS`). Never
+  edit the HTML; regenerate it. `tests/run_all.ps1` fails when they differ.
 
 ## Testing philosophy
 
