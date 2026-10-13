@@ -293,10 +293,30 @@ says so; recompute a molecular surface finer with, for example,
 
 ### Materials
 
-- PLA for most teaching models, PETG for robust handling models, PETG as a
-  breakaway support interface under PLA.
-- TPU only with [beam interlocking](#interlocking) and a compatible partner:
-  PETG with TPU works, PLA with TPU poorly.
+Three plastics cover almost everything a protein model needs:
+
+- **PLA** (polylactic acid) is made from plant starch or sugar. It is the
+  easiest to print – a low printing temperature, little warping, crisp detail
+  – and comes in the widest range of colours. It is stiff but brittle, and
+  softens at about 60 °C, so a model left in a hot car can deform. Although
+  plant-based, it decomposes only in industrial composting. The usual choice
+  for teaching and display models.
+- **PETG** (polyethylene terephthalate, glycol-modified) is related to the
+  plastic of drinks bottles. It is tougher and less brittle than PLA, bends a
+  little before it breaks, and tolerates more heat and chemicals. It strings
+  more while printing. Good for models that are handled a lot.
+- **TPU** (thermoplastic polyurethane) is elastic and rubber-like. It prints
+  slowly and needs care, but makes parts that bend and spring back – for
+  example a flexible joint between two printed parts.
+
+Which materials combine:
+
+- PLA and PETG barely stick to each other. That makes PETG an ideal support
+  interface under PLA: the supports break away cleanly. For the same reason, a
+  model that combines the two needs [beam interlocking](#interlocking) to hold
+  together.
+- TPU only with beam interlocking and a compatible partner: PETG with TPU
+  works, PLA with TPU poorly.
 
 <a name="slicer"></a>
 
