@@ -12,3 +12,6 @@ fbdebug_tmp.py
 docs/reply-to-*.md
 docs/LAB_NOTES.*
 docs/Save3MF-*-change-report.docx
+
+# Claude Code stores approved commands here, which can include secrets
+.claude/settings.local.json
