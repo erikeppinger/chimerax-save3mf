@@ -110,7 +110,7 @@ route that works.
 ```
 save PATH.3mf [models SPEC] [scale N] [size N] [colors true|false]
               [maxColors N] [flavor prusa|bambu|fullcolor] [paint true|false]
-              [smoothness MM|off] [check true|false]
+              [parts chain|model] [smoothness MM|off] [check true|false]
 ```
 
 - `models` — which models to export; default is everything displayed
@@ -121,6 +121,8 @@ save PATH.3mf [models SPEC] [scale N] [size N] [colors true|false]
 - `flavor` — what kind of printer the file is for (default `prusa`)
 - `paint` — paint extruders per triangle (default), or `false` to split the
   mesh into named parts instead
+- `parts` — one part per `chain` or per `model`, in place in one object and
+  still painted; default is one piece. See [One part per chain](#one-part-per-chain)
 - `smoothness` — deepest flat facet allowed at print size, in mm (default
   0.05); `off` exports exactly what is drawn. See [Smoothness](#smoothness)
 - `check` — run the printability check (default true)
@@ -173,7 +175,7 @@ colours. `maxColors N` clusters them in CIELAB, weighted by triangle area, and
 reports the mean colour shift:
 
 ```
-526 distinct colors merged into 5 printable parts (mean color shift ΔE 16.6)
+526 distinct colors merged into 5 printable colors (mean color shift ΔE 16.6)
 ```
 
 Each colour is always a real colour from the scene, never an averaged one.
@@ -186,7 +188,25 @@ says nothing, so the exporter warns above five.
 
 Neither applies to `flavor fullcolor`, which writes every colour as it is.
 
-### Choosing the part count before exporting
+### One part per chain
+
+A complex normally reaches the slicer as one piece. `parts chain` makes each
+chain a part of its own (*chain A*, *chain B*, …), to select, hide or set up
+separately, with its colours still painted inside it:
+
+```
+save complex.3mf parts chain flavor bambu
+```
+
+The parts belong to one object, because separate objects come apart: every
+slicer drops each object onto the bed, and Bambu Studio and OrcaSlicer
+rearrange them as well (probes J and K in
+[probes/RESULTS.md](probes/RESULTS.md)). Surface triangles go to the chain of
+the atom they surround; cartoons, sticks and spheres are one drawing for all
+chains, so their triangles go to the chain of the nearest drawn atom.
+`parts model` splits per top-level model (#1, #2, …) instead.
+
+### Choosing the number of colours before exporting
 
 ```
 3mf palette [models SPEC] [maxColors N] [size N] [scale N]
@@ -204,7 +224,7 @@ about 3h 57m spent changing tools (774 changes on a 5-tool printer)
   merge to 4    ■■■■               ΔE 21.7   strong shift        +3h 15m changing tools
   merge to 5    ■■■■■              ΔE 16.6   strong shift        +4h 40m changing tools
   merge to 8    ■■■■■■■■           ΔE 9.3    clearly different   +5h 44m changing tools
-  no merge                         ΔE 0.0    526 parts           +3h 57m changing tools
+  no merge                         ΔE 0.0    526 colors          +3h 57m changing tools
 ```
 
 With `maxColors N` it shows that exact palette instead. Nothing is written —
@@ -247,7 +267,7 @@ chain against the calibration runs.
 |---|---|
 | `pyproject.toml` | bundle declaration: the 3MF data format plus its save provider |
 | `src/__init__.py` | `BundleAPI` / `SaverInfo` — wires `save x.3mf` to the writer |
-| `src/scene.py` | walks displayed drawings, expands instances, welds vertices, scales to mm |
+| `src/scene.py` | walks displayed drawings, expands instances, labels chains or models, welds vertices, scales to mm |
 | `src/writer3mf.py` | builds the 3MF (OPC zip + `3D/3dmodel.model`) |
 | `src/gui.py` | options shown in ChimeraX's Save dialog |
 | `src/cmd.py` | the `3mf palette` preview command |
@@ -275,7 +295,7 @@ Four stages, each of which fails the run:
 | Stage | What it proves |
 |---|---|
 | **install** | `devel install` succeeded **and** the installed bytes match `src/` — a failed build silently leaves the old version in place, so a whole run can otherwise pass against stale code |
-| **export tests** | 17 checks over real exported files: geometry matches ChimeraX's own STL export, `size` is exact, nothing sits at negative coordinates, painting covers every triangle, split parts tile the mesh with no gaps, the >15-colour fallback works, an empty scene errors clearly |
+| **export tests** | 73 checks over real exported files: geometry matches ChimeraX's own STL export, `size` is exact, nothing sits at negative coordinates, painting covers every triangle, split parts tile the mesh with no gaps, one part per chain keeps every chain's colours, the >15-colour fallback works, smoothing stays within its target, an empty scene errors clearly |
 | **slicers** | PrusaSlicer loads the painted export as manifold, preserves the painting through a round trip and **actually slices it**; Bambu Studio and OrcaSlicer preserve `paint_color`. The tool-change estimate is checked against the real G-code and must stay within 5% |
 | **wheel** | `devel build` produces a wheel containing both the package and its documentation |
 
@@ -301,8 +321,9 @@ Use ChimeraX's bundled interpreter as above.
 ### A note on the suite itself
 
 It was checked by mutation: reintroducing the negative-coordinate bug made 7
-of the 17 checks fail with the right diagnosis. A suite that has never failed
-has not been tested.
+of the then 17 checks fail with the right diagnosis, and each later check was
+confirmed the same way against the bug it guards. A suite that has never
+failed has not been tested.
 
 ## Slicer notes
 
@@ -353,7 +374,10 @@ What is measured instead:
 - **Genuinely loose pieces** — only geometry that touches nothing else, such
   as a water or an ion sitting in space, is reported as printing separately.
 - **Open surfaces** — reported as a fact with its usual cause, not as an
-  alarm: bond cylinders have no end caps and clipped surfaces are cut open.
+  alarm: a surface cut open by a clipping plane. Bond cylinders, which
+  ChimeraX draws without end caps, are capped on export, and the two
+  half-bond caps that pseudobonds bring meet face to face and are removed,
+  so stick and strut models arrive closed.
 - **Extreme sizes and thin features** — below what a 0.4 mm nozzle can hold,
   or larger than most build plates.
 

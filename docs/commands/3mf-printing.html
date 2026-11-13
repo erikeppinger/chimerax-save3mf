@@ -127,6 +127,8 @@ will <a href="#smoothness">smooth</a> the model.</p>
   colouring such as rainbow or B-factor on a filament printer.</li>
 <li><strong>flavor</strong> – <strong>prusa</strong> (default) for PrusaSlicer, <strong>bambu</strong> for Bambu Studio
   and OrcaSlicer, <strong>fullcolor</strong> for full-colour printers.</li>
+<li><strong>parts chain</strong> – one part per chain instead of one piece, for complexes
+  (see <a href="#complexes">Complexes</a> below). 1ubq has a single chain.</li>
 </ul>
 <p>The report in the log lists the colour parts and what a slicer will make of the
 geometry. Supports scale with the model: at a small scale, well below 1 mm/Å,
@@ -151,7 +153,8 @@ makes it finer, saying so in the log before the file is written. At 100 mm
 <h3>8. Slicer</h3>
 <ul>
 <li>Open the 3MF. Colours arrive as painted extruders (or as separate parts with
-  <strong>paint false</strong>).</li>
+  <strong>paint false</strong>). The painting only arrives with the matching flavour:
+  <strong>prusa</strong> for PrusaSlicer, <strong>bambu</strong> for Bambu Studio and OrcaSlicer.</li>
 <li>Assign filaments; use organic or tree support material.</li>
 <li>Do not re-orient the part if Support Optimizer has already done so.</li>
 <li>Check the preview: no small loose fragments, supports printed continuously.</li>
@@ -220,6 +223,30 @@ when they are computed. If theirs is too coarse for the print size, the log
 says so; recompute a molecular surface finer with, for example,
 <code>surface gridSpacing 0.3</code>, or show a map at full resolution with
 <code>volume step 1</code>.</p>
+<p><a name="complexes"></a></p>
+<h3>Complexes of several chains</h3>
+<p>A complex – an AlphaFold prediction of two interacting proteins, a dimer from
+the PDB – normally arrives in the slicer as one piece. To handle each chain on
+its own, export one part per chain, for example with
+<code>save complex.3mf size 100 parts chain flavor bambu</code>:</p>
+<ul>
+<li>The slicer lists one object with a part per chain (<em>chain A</em>, <em>chain B</em>, …).
+  Each can be selected, hidden or given its own settings, and keeps its
+  painted colours, such as a highlighted binding site.</li>
+<li>The chains stay in place. Separate objects would not: a slicer puts every
+  object on the bed, which would pull a chain that floats above it down.</li>
+<li><strong>parts model</strong> does the same per model, for structures opened side by side.</li>
+<li>Use the flavour of your slicer (<strong>prusa</strong> or <strong>bambu</strong>). With the wrong one
+  the file opens, but not as intended: Bambu Studio and OrcaSlicer show a
+  prusa file as one part without its colours, and PrusaSlicer takes a bambu
+  file apart into separate objects.</li>
+<li>To print the chains as separate pieces, split the object in the slicer
+  (OrcaSlicer: right-click → <em>Split</em> → <em>To objects</em>). Each piece is then put
+  on the bed, and the split drops the painting, so assign a filament to each
+  piece afterwards. Tiny extra pieces from the split are cavities inside the
+  protein and can be deleted.</li>
+</ul>
+<p>In the Save dialog this is the <em>Parts</em> option.</p>
 <h3>Surface models</h3>
 <ul>
 <li>The easiest representation to print on an FDM printer.</li>

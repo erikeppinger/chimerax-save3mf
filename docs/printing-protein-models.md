@@ -142,6 +142,8 @@ save ~/Desktop/1ubq.3mf size 100 maxColors 4
   colouring such as rainbow or B-factor on a filament printer.
 - **flavor** – **prusa** (default) for PrusaSlicer, **bambu** for Bambu Studio
   and OrcaSlicer, **fullcolor** for full-colour printers.
+- **parts chain** – one part per chain instead of one piece, for complexes
+  (see [Complexes](#complexes) below). 1ubq has a single chain.
 
 The report in the log lists the colour parts and what a slicer will make of the
 geometry. Supports scale with the model: at a small scale, well below 1 mm/Å,
@@ -168,7 +170,8 @@ Load the 3MF by drag and drop; the colours are kept.
 ### 8. Slicer
 
 - Open the 3MF. Colours arrive as painted extruders (or as separate parts with
-  **paint false**).
+  **paint false**). The painting only arrives with the matching flavour:
+  **prusa** for PrusaSlicer, **bambu** for Bambu Studio and OrcaSlicer.
 - Assign filaments; use organic or tree support material.
 - Do not re-orient the part if Support Optimizer has already done so.
 - Check the preview: no small loose fragments, supports printed continuously.
@@ -248,6 +251,33 @@ when they are computed. If theirs is too coarse for the print size, the log
 says so; recompute a molecular surface finer with, for example,
 `surface gridSpacing 0.3`, or show a map at full resolution with
 `volume step 1`.
+
+<a name="complexes"></a>
+
+### Complexes of several chains
+
+A complex – an AlphaFold prediction of two interacting proteins, a dimer from
+the PDB – normally arrives in the slicer as one piece. To handle each chain on
+its own, export one part per chain, for example with
+`save complex.3mf size 100 parts chain flavor bambu`:
+
+- The slicer lists one object with a part per chain (*chain A*, *chain B*, …).
+  Each can be selected, hidden or given its own settings, and keeps its
+  painted colours, such as a highlighted binding site.
+- The chains stay in place. Separate objects would not: a slicer puts every
+  object on the bed, which would pull a chain that floats above it down.
+- **parts model** does the same per model, for structures opened side by side.
+- Use the flavour of your slicer (**prusa** or **bambu**). With the wrong one
+  the file opens, but not as intended: Bambu Studio and OrcaSlicer show a
+  prusa file as one part without its colours, and PrusaSlicer takes a bambu
+  file apart into separate objects.
+- To print the chains as separate pieces, split the object in the slicer
+  (OrcaSlicer: right-click → *Split* → *To objects*). Each piece is then put
+  on the bed, and the split drops the painting, so assign a filament to each
+  piece afterwards. Tiny extra pieces from the split are cavities inside the
+  protein and can be deleted.
+
+In the Save dialog this is the *Parts* option.
 
 ### Surface models
 

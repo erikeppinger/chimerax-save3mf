@@ -78,6 +78,17 @@ the flats are at the chosen size and, where they would show (deeper than
 saying so in the log first, and leaving the display as it was.
 `smoothness off` exports exactly what is drawn.
 
+### One part per chain
+
+A complex normally arrives in the slicer as one piece. With `parts chain`
+each chain becomes its own part – selectable, with its own settings, colours
+still painted – while the complex stays assembled as one object. `parts model`
+does the same per model.
+
+```
+save complex.3mf parts chain flavor bambu
+```
+
 ### Printing protein models
 
 The help includes a worked example – ubiquitin from the PDB to a four-colour

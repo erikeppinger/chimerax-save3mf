@@ -128,6 +128,329 @@ def test_split_parts():
           r.ok, "; ".join(r.problems))
 
 
+def _parts(path):
+    """The parts of the one object in a 3MF: [(name, triangles, paint codes)].
+
+    Reads both layouts - PrusaSlicer's triangle-range volumes and Bambu's
+    components - the way the slicers do.
+    """
+    import re
+    import zipfile
+    with zipfile.ZipFile(path) as z:
+        model = z.read("3D/3dmodel.model").decode("utf-8")
+        names = z.namelist()
+        prusa = ("Metadata/Slic3r_PE_model.config" in names
+                 and z.read("Metadata/Slic3r_PE_model.config").decode("utf-8"))
+    code = r'(?:paint_color|mmu_segmentation)="([^"]*)"'
+    if prusa:
+        tris = re.findall(r"<triangle [^>]*>", model)
+        out = []
+        for first, last, body in re.findall(
+                r'<volume firstid="(\d+)" lastid="(\d+)">(.*?)</volume>',
+                prusa, re.S):
+            name = re.search(r'key="name" value="([^"]*)"', body).group(1)
+            sub = tris[int(first):int(last) + 1]
+            out.append((name, len(sub),
+                        {m for t in sub for m in re.findall(code, t)}))
+        return out
+    objects = dict(re.findall(r'<object id="(\d+)"[^>]*>(.*?)</object>',
+                              model, re.S))
+    heads = dict(re.findall(r'<object id="(\d+)"([^>]*)>', model))
+    out = []
+    for oid in re.findall(r'<component objectid="(\d+)"', model):
+        body = objects[oid]
+        name = re.search(r'name="([^"]*)"', heads[oid]).group(1)
+        out.append((name, len(re.findall(r"<triangle ", body)),
+                    set(re.findall(code, body))))
+    return out
+
+
+def test_parts_per_chain():
+    """parts chain: one part per chain, each painted, inside one object.
+
+    Chain A is given two colours and chains B and C share one, so a part per
+    colour (what paint false does) would come out differently from a part per
+    chain.
+    """
+    scene("open 1a3n", "delete solvent | ligand", "hide atoms", "hide cartoon",
+          "surface", "color bychain target s", "color /A:1-30 orange target s",
+          "color /C #00ff00 target s", "color /B #00ff00 target s")
+    whole = validate(export("t_whole.3mf", "size 60"), expect_painted=True)
+    for flavor in ("prusa", "bambu"):
+        path = export("t_parts_%s.3mf" % flavor, "size 60 parts chain flavor %s"
+                      % flavor)
+        parts = _parts(path)
+        names = [p[0] for p in parts]
+        check("parts %s: one part per chain" % flavor,
+              names == ["chain A", "chain B", "chain C", "chain D"],
+              "got %s" % names)
+        check("parts %s: the parts hold every triangle of the scene" % flavor,
+              sum(p[1] for p in parts) == whole.facts["triangles"],
+              "%d vs %d" % (sum(p[1] for p in parts), whole.facts["triangles"]))
+        codes = {p[0]: p[2] for p in parts}
+        check("parts %s: chain A keeps both of its colours" % flavor,
+              len(codes.get("chain A", ())) == 2, "codes %s" % codes)
+        check("parts %s: chains B and C share one painted colour" % flavor,
+              codes.get("chain B") == codes.get("chain C")
+              and len(codes.get("chain B", ())) == 1, "codes %s" % codes)
+        with __import__("zipfile").ZipFile(path) as z:
+            items = z.read("3D/3dmodel.model").decode("utf-8").count("<item ")
+        check("parts %s: one object on the plate, not one per chain" % flavor,
+              items == 1, "%d build items" % items)
+
+
+def test_parts_cartoon():
+    """Cartoons and atoms are one drawing for all chains; each triangle has to
+    reach the right chain anyway. Coloured by chain, so a misplaced triangle
+    shows up as a second colour in a part."""
+    scene("open 1a3n", "delete solvent | ligand", "hide atoms", "cartoon",
+          "show :HIS atoms", "color bychain")
+    parts = _parts(export("t_parts_cartoon.3mf", "size 60 parts chain"))
+    check("parts cartoon: four chains", len(parts) == 4,
+          "got %s" % [p[0] for p in parts])
+    mixed = ["%s %s" % (p[0], sorted(p[2])) for p in parts if len(p[2]) != 1]
+    check("parts cartoon: no triangle lands in another chain's part",
+          not mixed, "; ".join(mixed))
+
+
+def test_parts_hidden_atoms():
+    """Hidden atoms must not claim cartoon triangles: chain A's waters are
+    moved to a chain W of their own and hidden, so a part 'chain W' would mean
+    the nearest-atom search looked at atoms that are not drawn. The ribbon is
+    thickened as for printing; a thin one runs through the backbone atoms and
+    never comes nearer a water (1041 triangles go to W otherwise)."""
+    scene("open 1a3n", "delete ligand", "hide atoms", "cartoon",
+          "changechains /A & solvent W",
+          "cartoon style protein xsection round width 4 thick 3")
+    names = [p[0] for p in _parts(export("t_parts_hidden.3mf",
+                                         "size 60 parts chain"))]
+    check("parts: hidden atoms claim no triangles",
+          names == ["chain A", "chain B", "chain C", "chain D"],
+          "got %s" % names)
+
+
+def _mixed(parts):
+    """Parts holding more than one paint code, for scenes coloured by chain."""
+    return ["%s %s" % (p[0], sorted(p[2])) for p in parts if len(p[2]) != 1]
+
+
+def test_parts_spheres():
+    """Spheres of neighbouring chains overlap. Each must go to its chain
+    whole; assigned triangle by triangle, the cap of a sphere that reaches
+    into the other chain's sphere ends up in that chain's part."""
+    scene("open 1a3n", "delete solvent | ligand", "hide cartoon",
+          "show atoms", "style sphere", "color bychain",
+          "hide pbonds")        # they keep a colour of their own
+    parts = _parts(export("t_parts_spheres.3mf", "size 60 parts chain"))
+    check("parts spheres: four chains", len(parts) == 4,
+          "got %s" % [p[0] for p in parts])
+    check("parts spheres: no sphere is split between chains",
+          not _mixed(parts), "; ".join(_mixed(parts)))
+
+
+def test_parts_thick_ribbon():
+    """A ribbon thickened for printing reaches the neighbouring chain's side
+    chains; its triangles must still follow the residue they were drawn
+    for."""
+    scene("open 1a3n", "delete solvent | ligand", "hide atoms", "cartoon",
+          "cartoon style protein xsection round width 4 thick 3",
+          "color bychain")
+    parts = _parts(export("t_parts_thick.3mf", "size 60 parts chain"))
+    check("parts thick ribbon: four chains", len(parts) == 4,
+          "got %s" % [p[0] for p in parts])
+    check("parts thick ribbon: no triangle lands in another chain's part",
+          not _mixed(parts), "; ".join(_mixed(parts)))
+
+
+def test_parts_surface_without_atom_map():
+    """Sharp-edged zone colouring replaces a surface's vertices, and ChimeraX
+    then has no atom map for it. The triangles must go to the surface's own
+    atoms: with a cartoon shown for chain A only, a search among the drawn
+    atoms would hand every surface to chain A."""
+    scene("open 1a3n", "delete solvent | ligand", "hide atoms", "surface",
+          "color bychain", "color zone #1 near /A distance 4 sharpEdges true",
+          "hide cartoon", "cartoon /A")
+    names = [p[0] for p in _parts(export("t_parts_sharp.3mf",
+                                         "size 60 parts chain"))]
+    check("parts: a surface without atom map stays with its own chain",
+          names == ["chain A", "chain B", "chain C", "chain D"],
+          "got %s" % names)
+
+
+def test_parts_bonds_between_models():
+    """A distance or hydrogen bond between two models is drawn by a model of
+    its own; it belongs to the atoms it joins, not in an extra part."""
+    scene("open 1ubq", "open 1ubq", "delete solvent", "hide atoms", "cartoon",
+          "move x 45 models #2", "distance #1/A:1@CA #2/A:76@CA")
+    for mode in ("chain", "model"):
+        names = [p[0] for p in _parts(export(
+            "t_parts_between_%s.3mf" % mode, "parts %s flavor bambu" % mode))]
+        check("parts %s: bonds between models make no part of their own"
+              % mode, len(names) == 2, "got %s" % names)
+
+
+def test_parts_per_model():
+    scene("open 1ubq", "open 1ubq", "delete solvent", "hide atoms",
+          "hide cartoon", "move x 45 models #2", "surface")
+    parts = _parts(export("t_parts_model.3mf", "parts model flavor bambu"))
+    names = [p[0] for p in parts]
+    check("parts model: one part per model", len(parts) == 2, "got %s" % names)
+    check("parts model: same-named models get distinct part names",
+          len(set(names)) == len(names), "got %s" % names)
+    # each model's chain A is a chain of its own, not merged across models
+    parts = _parts(export("t_parts_two_a.3mf", "parts chain flavor bambu"))
+    names = [p[0] for p in parts]
+    check("parts chain: chain A of two models stays two parts",
+          len(parts) == 2 and len(set(names)) == 2, "got %s" % names)
+
+
+def test_parts_unpainted():
+    """paint false with parts: the parts are kept, without colour."""
+    scene("open 1a3n", "delete solvent | ligand", "hide atoms", "hide cartoon",
+          "surface", "color bychain")
+    parts = _parts(export("t_parts_unpainted.3mf",
+                          "parts chain paint false flavor bambu"))
+    check("parts unpainted: four chains", len(parts) == 4,
+          "got %s" % [p[0] for p in parts])
+    check("parts unpainted: no paint codes written",
+          all(not p[2] for p in parts), "%s" % [sorted(p[2]) for p in parts])
+
+
+def test_parts_fullcolor_refused():
+    scene("open 1ubq", "hide atoms", "hide cartoon", "surface")
+    try:
+        export("t_parts_fc.3mf", "parts chain flavor fullcolor")
+        refused = False
+    except Exception as e:
+        refused = "filament flavor" in str(e)
+    check("parts: refused for full colour, with the reason", refused)
+
+
+def _open_loops(path):
+    """Sizes of the open-edge loops of the first mesh in a 3MF: edges used by
+    one triangle only, joined into loops."""
+    import re
+    import zipfile
+    from collections import defaultdict
+    from numpy import array, concatenate, int64, unique
+    with zipfile.ZipFile(path) as z:
+        model = z.read("3D/3dmodel.model").decode("utf-8")
+    tris = array(re.findall(r'<triangle v1="(\d+)" v2="(\d+)" v3="(\d+)"',
+                            model), int64)
+    edges = concatenate([tris[:, [0, 1]], tris[:, [1, 2]], tris[:, [2, 0]]])
+    edges.sort(axis=1)
+    n = int(tris.max()) + 1
+    keys, counts = unique(edges[:, 0] * n + edges[:, 1], return_counts=True)
+    neighbours = defaultdict(list)
+    for k in keys[counts == 1].tolist():
+        a, b = divmod(k, n)
+        neighbours[a].append(b)
+        neighbours[b].append(a)
+    seen, sizes = set(), []
+    for start in neighbours:
+        if start in seen:
+            continue
+        stack, size = [start], 0
+        seen.add(start)
+        while stack:
+            p = stack.pop()
+            size += 1
+            for q in neighbours[p]:
+                if q not in seen:
+                    seen.add(q)
+                    stack.append(q)
+        sizes.append(size)
+    return sizes
+
+
+def test_sticks_are_closed():
+    """A stick model must arrive closed.
+
+    The two half cylinders of a bond meet in the middle and must share their
+    rim: merging vertices by rounded coordinates left about one slit per bond
+    (a 4- to 10-edge hole) where copies of a rim vertex fell on either side
+    of a rounding boundary. And ChimeraX draws bond cylinders without end
+    caps, so their ends inside the atom spheres were open rims that slicers
+    count as open edges; those are capped on export."""
+    scene("open 1ubq", "delete solvent", "hide cartoon", "show atoms",
+          "style stick")
+    path = export("t_sticks.3mf", "size 80")
+    sizes = _open_loops(path)
+    slits = [s for s in sizes if s < 16]
+    check("sticks: no slits where half bonds meet", not slits,
+          "%d slits, sizes %s" % (len(slits), sorted(set(slits))))
+    check("sticks: bond ends are capped, no open edges left", not sizes,
+          "%d open loops, sizes %s" % (len(sizes), sorted(set(sizes))))
+    import zipfile
+    with zipfile.ZipFile(path) as z:
+        use = _edge_use(z.read("3D/3dmodel.model").decode("utf-8"))
+    check("sticks: every edge on exactly two triangles",
+          use and all(set(u) == {2} for u in use),
+          "edge use %s" % [dict(u) for u in use])
+
+
+def test_clipped_surface_stays_open():
+    """Capping is for round rims only. A surface cut by a clipping plane has
+    a ragged opening; a fan over it would cross itself, so it stays open."""
+    scene("open 1ubq", "delete solvent", "hide atoms", "hide cartoon",
+          "surface", "clip near -3 position #1")
+    sizes = _open_loops(export("t_clipped.3mf", "size 60"))
+    check("clipped surface: the cut stays open, not fanned over", sizes,
+          "no open loops: the cut was capped")
+
+
+def test_ball_and_stick_parts_closed():
+    """Ball-and-stick split per chain: bonds between chains are split
+    between two parts, and each half has to be closed in its own part."""
+    import zipfile
+    scene("open 1a3n", "delete solvent | ligand", "hide cartoon",
+          "show /A,B & :1-40 atoms", "style ball",
+          "hbonds /A,B & :1-40 radius 0.3 dashes 0")
+    path = export("t_bns_parts.3mf", "size 60 parts chain flavor bambu")
+    with zipfile.ZipFile(path) as z:
+        use = _edge_use(z.read("3D/3dmodel.model").decode("utf-8"))
+    check("ball and stick, parts: every part closed",
+          use and all(set(u) == {2} for u in use),
+          "edge use %s" % [dict(u) for u in use])
+
+
+def _edge_use(model_text):
+    """How many edges are used by 1, 2, 3 ... triangles, per mesh object."""
+    import re
+    from collections import Counter
+    from numpy import array, concatenate, int64, unique
+    out = []
+    for body in re.findall(r"<mesh>(.*?)</mesh>", model_text, re.S):
+        t = array(re.findall(r'<triangle v1="(\d+)" v2="(\d+)" v3="(\d+)"',
+                             body), int64)
+        e = concatenate([t[:, [0, 1]], t[:, [1, 2]], t[:, [2, 0]]])
+        e.sort(axis=1)
+        _, counts = unique(e[:, 0] * (int(t.max()) + 1) + e[:, 1],
+                           return_counts=True)
+        out.append(Counter(counts.tolist()))
+    return out
+
+
+def test_pseudobonds_are_closed():
+    """ChimeraX draws a pseudobond as two capped half cylinders whose caps
+    meet face to face in the middle. Exported as they are, each rim edge
+    belongs to four triangles and slicers report a broken mesh. Hydrogen
+    bonds on a cartoon must come out closed: every edge on two triangles,
+    also with one part per chain, where a bond between two chains is split
+    and each half keeps its cap."""
+    import zipfile
+    scene("open 1a3n", "delete solvent | ligand", "hide atoms", "cartoon",
+          "hbonds radius 0.4 dashes 0")
+    for label, args in (("one piece", "size 60"),
+                        ("parts", "size 60 parts chain flavor bambu")):
+        path = export("t_hbonds_%s.3mf" % label.replace(" ", "_"), args)
+        with zipfile.ZipFile(path) as z:
+            use = _edge_use(z.read("3D/3dmodel.model").decode("utf-8"))
+        bad = [dict(u) for u in use if set(u) != {2}]
+        check("hydrogen bonds, %s: every edge on exactly two triangles" % label,
+              use and not bad, "edge use %s" % bad)
+
+
 def test_colors_off():
     scene("open 1ubq", "delete solvent", "hide atoms", "hide cartoon",
           "surface")
@@ -177,8 +500,10 @@ def test_spheres_are_one_body():
     check("spheres: hundreds of surfaces make one printed body",
           r.body_count == 1,
           "%d bodies from %d surfaces" % (r.body_count, r.shell_count))
-    check("spheres: open-ended cylinders are noticed", r.open_shells > 0,
-          "%d open surfaces" % r.open_shells)
+    # ChimeraX draws bond cylinders open-ended; the export caps them, so the
+    # report must not call any surface open
+    check("spheres: bond cylinders arrive capped, no open surfaces",
+          r.open_shells == 0, "%d open surfaces" % r.open_shells)
 
 
 def test_density_cavities():
@@ -363,6 +688,20 @@ TESTS = [
     test_painting,
     test_bambu_flavor,
     test_split_parts,
+    test_parts_per_chain,
+    test_parts_cartoon,
+    test_parts_hidden_atoms,
+    test_parts_spheres,
+    test_parts_thick_ribbon,
+    test_parts_surface_without_atom_map,
+    test_parts_bonds_between_models,
+    test_parts_per_model,
+    test_parts_unpainted,
+    test_parts_fullcolor_refused,
+    test_sticks_are_closed,
+    test_clipped_surface_stays_open,
+    test_ball_and_stick_parts_closed,
+    test_pseudobonds_are_closed,
     test_colors_off,
     test_too_many_colors,
     test_ribbon_is_one_body,

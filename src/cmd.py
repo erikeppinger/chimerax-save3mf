@@ -37,7 +37,7 @@ def palette(session, models=None, max_colors=None, size=None, scale=None,
         tools=tool_count)
 
     if max_colors is not None:
-        logger.info("%d distinct colors merged into %d parts "
+        logger.info("%d distinct colors merged into %d colors "
                     "(mean color shift \N{GREEK CAPITAL LETTER DELTA}E %.1f, %s)"
                     % (regions.distinct, regions.count, regions.delta_e,
                        color_module.describe_delta_e(regions.delta_e)))
@@ -87,7 +87,7 @@ def palette(session, models=None, max_colors=None, size=None, scale=None,
     rows.append(
         '<tr><td align="right">&nbsp;no merge&nbsp;</td><td></td>'
         '<td>&nbsp;\N{GREEK CAPITAL LETTER DELTA}E 0.0</td>'
-        '<td>&nbsp;%d parts, exactly as colored</td>'
+        '<td>&nbsp;%d colors, exactly as colored</td>'
         '<td align="right">&nbsp;+%s changing tools</td></tr>'
         % (regions.distinct, cost.time_text()))
 
@@ -141,7 +141,7 @@ def _log_palette_with_cost(session, regions, cost):
                     'of the model</td>' % (cost.saving_text(i), share))
         rows.append(
             '<tr><td style="background:%s;width:2em">&nbsp;</td>'
-            '<td>&nbsp;part %d</td><td>&nbsp;%s</td>'
+            '<td>&nbsp;color %d</td><td>&nbsp;%s</td>'
             '<td align="right">&nbsp;%.1f%%</td>'
             '<td align="right">&nbsp;%d layers</td>'
             '<td align="right">&nbsp;+%s</td>%s</tr>'

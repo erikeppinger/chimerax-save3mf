@@ -55,6 +55,7 @@ and practical tips.
 &nbsp;[&nbsp;<b>maxColors</b>&nbsp;<i>N</i>&nbsp;]
 &nbsp;[&nbsp;<b>flavor</b>&nbsp;prusa|bambu|fullcolor&nbsp;]
 &nbsp;[&nbsp;<b>paint</b>&nbsp;true|false&nbsp;]
+&nbsp;[&nbsp;<b>parts</b>&nbsp;chain|model&nbsp;]
 &nbsp;[&nbsp;<b>smoothness</b>&nbsp;<i>mm</i>|off&nbsp;]
 &nbsp;[&nbsp;<b>check</b>&nbsp;true|false&nbsp;]
 </blockquote>
@@ -94,6 +95,11 @@ mesh (default) or, with <b>false</b>, split the mesh into named parts
 instead. Painting keeps the mesh whole; splitting leaves open edges between
 the parts but gives each a name in the slicer's part list.</li>
 
+<li><b>parts</b> &ndash; with a filament flavour, write one part per
+<b>chain</b> or per <b>model</b>, all in one object and in place, with the
+colours still painted inside each part. By default the scene is one piece.
+See <a href="#parts">One part per chain</a>.</li>
+
 <li><b>smoothness</b> &ndash; the deepest flat facet allowed in the print,
 in millimetres (default 0.05). Where ChimeraX's screen tessellation would be
 coarser than that at the chosen size, the export is made finer; <b>off</b>
@@ -125,10 +131,10 @@ at negative x or y is off the build plate.
 </blockquote>
 
 <p>
-Reports the colour parts an export would produce, without writing anything.
-With no options it also shows what merging to each part count would cost, as
+Reports the colours an export would produce, without writing anything.
+With no options it also shows what merging to each number of colours would cost, as
 colour swatches with the mean perceptual error (&Delta;E) in plain words, so
-the number of parts can be chosen before exporting:
+the number of colours can be chosen before exporting:
 </p>
 
 <pre>
@@ -138,12 +144,12 @@ about 3h 57m spent changing tools (774 changes on a 5-tool printer)
   merge to 4     &Delta;E 21.7   strong shift       +3h 15m changing tools
   merge to 5     &Delta;E 16.6   strong shift       +4h 40m changing tools
   merge to 8     &Delta;E 9.3    clearly different  +5h 44m changing tools
-  no merge       &Delta;E 0.0    526 parts          +3h 57m changing tools
+  no merge       &Delta;E 0.0    526 colors         +3h 57m changing tools
 </pre>
 
 <p>
 With <b>maxColors</b> <i>N</i> it shows that exact palette instead, with the
-area share, the number of layers each part appears in, and the tool changes it
+area share, the number of layers each colour appears in, and the tool changes it
 causes.
 </p>
 
@@ -163,12 +169,12 @@ since it forces a tool change on each one.
 </p>
 
 <p>
-So a part covering a fraction of a percent of the model can still drive a
+So a colour covering a fraction of a percent of the model can still drive a
 large share of the print time, and the palette says so:
 </p>
 
 <pre>
-Part 5 (1a3n_D SES surface red) is 0.4% of the model but drives about 6% of
+Colour 5 (1a3n_D SES surface red) is 0.4% of the model but drives about 6% of
 the tool changes, because it appears in 52 of 269 layers. Dropping it with
 'maxColors 4' would save roughly 52 tool changes.
 </pre>
@@ -204,7 +210,7 @@ Because the layer count depends on how tall the print is, <b>size</b> and
 <p>
 Colours are clustered in CIELAB rather than RGB, weighted by triangle area, so
 merging follows what the eye calls similar and a large surface is not merged
-away in favour of a few tiny ligand triangles. Each part keeps a colour that
+away in favour of a few tiny ligand triangles. Each merged colour is one that
 actually appears in the scene rather than a cluster average.
 </p>
 
@@ -322,6 +328,53 @@ outside, but not if the model is cut. See
 interlocking, which also acts on painted boundaries.
 </p>
 
+<a name="parts"></a>
+<h4>One part per chain</h4>
+
+<p>
+A complex of several chains, such as an AlphaFold prediction of two
+interacting proteins, normally arrives in the slicer as one piece. With
+<b>parts chain</b> each chain becomes a part of its own, named
+<i>chain A</i>, <i>chain B</i> and so on, so it can be selected, hidden or
+given its own settings. <b>parts model</b> does the same per top-level model
+(#1, #2, &hellip;, submodels included), for structures opened side by side.
+Chains are counted per structure, so the models of an ensemble (#1.1, #1.2,
+&hellip;) each keep their own chain A.
+</p>
+
+<blockquote>
+<b>save</b> complex.3mf <b>parts</b> chain <b>flavor</b> bambu
+</blockquote>
+
+<p>
+The parts belong to one object, so the chains stay where they are relative to
+each other. Separate objects would not: every slicer puts each object on the
+bed, which lowers a chain that floats above it, and Bambu Studio and
+OrcaSlicer also rearrange them. The colours are painted inside each part as
+usual, so a chain keeps a highlighted binding site or ligand. PrusaSlicer
+needs <b>flavor prusa</b> and Bambu Studio or OrcaSlicer <b>flavor bambu</b>.
+The wrong flavour does not work: Bambu Studio and OrcaSlicer open a prusa
+file as one part without its painting, and PrusaSlicer opens a bambu file as
+separate objects, each dropped onto the bed.
+</p>
+
+<p>
+Each triangle of a molecular surface goes to the chain of the atom it
+surrounds, so surfaces are split exactly, also a surface that encloses several
+chains. A cartoon is divided by the residues it was drawn for. Spheres, sticks
+and supports each go, whole, to the chain of the nearest atom shown; a bond or
+support between two chains therefore belongs to one of them. Anything not
+built from atoms, such as a map surface, goes to its model.
+</p>
+
+<p>
+Chains in contact overlap where they meet, and so do their parts. Slicers
+print the overlap once, as they do for the parts made by <b>paint false</b>.
+To print the chains as separate pieces, split them in the slicer, but note
+that splitting there drops the painting: give each piece its filament
+afterwards, or export each chain on its own.
+</p>
+
 <a name="printability"></a>
 <h4>Printability report</h4>
 
@@ -348,9 +401,10 @@ what lies inside an odd number of surfaces, so a cavity stays hollow and costs
 no filament.</li>
 <li><b>Genuinely loose pieces</b> &ndash; only geometry touching nothing else,
 such as a water or ion in space, is reported as printing separately.</li>
-<li><b>Open surfaces</b> &ndash; stated as a fact with its cause. Bond
-cylinders have no end caps and clipped surfaces are cut open; slicers close
-them when slicing.</li>
+<li><b>Open surfaces</b> &ndash; stated as a fact with its cause, usually a
+surface cut open by a clipping plane; slicers close them when slicing. Bonds
+are closed on export: ChimeraX draws their cylinders without end caps, and
+every round, flat opening like that is capped in the file.</li>
 <li><b>Thin features and extreme sizes</b> &ndash; pieces below what a 0.4 mm
 nozzle can hold, or a model larger than most build plates.</li>
 </ul>

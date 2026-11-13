@@ -244,6 +244,35 @@ print(len(collections.Counter(re.findall(r'paint_color="([^"]*)"', d))))
     }
 }
 
+# One part per chain: each slicer must open its own layout as ONE object
+# holding the four chains of 1a3n as parts, each still painted. Read back
+# with the probe reader, which follows both layouts the way the slicers do.
+$partsChecks = @(
+    @{ Name = "PrusaSlicer"; Exe = $PrusaSlicer; File = "t_parts_prusa.3mf"
+       Args = { param($out, $in) @("--export-3mf", "--dont-arrange", "-o", $out, $in) } },
+    @{ Name = "Bambu Studio"; Exe = $forks["Bambu Studio"]; File = "t_parts_bambu.3mf"
+       Args = { param($out, $in) @("--export-3mf=$out", $in) } },
+    @{ Name = "OrcaSlicer"; Exe = $forks["OrcaSlicer"]; File = "t_parts_bambu.3mf"
+       Args = { param($out, $in) @("--export-3mf=$out", $in) } }
+)
+foreach ($c in $partsChecks) {
+    $label = "$($c.Name) keeps one part per chain"
+    if (-not (Test-Path $c.Exe)) { Skip $label "not installed"; continue }
+    $in = "$Bundle\tests\out\$($c.File)"
+    if (-not (Test-Path $in)) { Fail $label "no $($c.File) to test"; continue }
+    $rt = "$Bundle\tests\out\rt_parts_$($c.Name -replace '\s','').3mf"
+    if (Test-Path $rt) { Remove-Item $rt -Force }
+    Invoke-Tool $c.Exe (& $c.Args $rt $in) | Out-Null
+    if (-not (Test-Path $rt)) { Fail $label "no file produced"; continue }
+    $summary = (Invoke-Tool $Python @("$Bundle\tools\probe_objects.py", "--read", $rt) |
+                Select-String "summary:" | Select-Object -Last 1)
+    if ("$summary" -match "items=1 pieces=4 painted=4") {
+        Pass $label "(1 object, 4 painted parts)"
+    } else {
+        Fail $label "expected items=1 pieces=4 painted=4, got: $summary"
+    }
+}
+
 # ------------------------------------------------------------------ 4. wheel
 Write-Host "`n== wheel ==" -ForegroundColor Cyan
 if (Test-Path "$Bundle\dist") { Remove-Item "$Bundle\dist" -Recurse -Force }

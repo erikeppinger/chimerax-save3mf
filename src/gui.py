@@ -18,6 +18,13 @@ SLICERS = [
     ("Other (geometry and colors only)", "generic"),
 ]
 
+# label, parts argument
+PARTS = [
+    ("One piece", None),
+    ("One part per chain", "chain"),
+    ("One part per model", "model"),
+]
+
 DEFAULT_SIZE_MM = 80.0
 DEFAULT_MAX_COLORS = 5
 DEFAULT_SMOOTHNESS_MM = 0.05
@@ -37,6 +44,7 @@ class SaveOptionsWidget(QFrame):
         layout.addLayout(self._size_section())
         layout.addLayout(self._smoothness_section())
         layout.addLayout(self._color_section())
+        layout.addLayout(self._parts_section())
         layout.addLayout(self._slicer_section())
 
         self.check = QCheckBox("Report printability problems")
@@ -105,10 +113,10 @@ class SaveOptionsWidget(QFrame):
         box = QVBoxLayout()
         box.setSpacing(3)
 
-        self.colors = QCheckBox("Split colors into printable parts")
+        self.colors = QCheckBox("Carry colors into the print")
         self.colors.setChecked(True)
-        self.colors.setToolTip("Each color becomes a part the slicer can "
-                               "assign to its own filament")
+        self.colors.setToolTip("Each color is assigned to its own filament in "
+                               "the slicer")
         self.colors.toggled.connect(self._update_enabled)
         box.addWidget(self.colors, alignment=Qt.AlignLeft)
 
@@ -116,7 +124,7 @@ class SaveOptionsWidget(QFrame):
         merge_row.setSpacing(4)
         self.merge = QCheckBox("Merge to at most")
         self.merge.setToolTip("Continuous coloring (rainbow, by B-factor) can "
-                              "produce hundreds of parts")
+                              "produce hundreds of colors")
         self.merge.toggled.connect(self._update_enabled)
         self.merge_count = QSpinBox()
         self.merge_count.setRange(2, 999)
@@ -124,7 +132,7 @@ class SaveOptionsWidget(QFrame):
         merge_row.addSpacing(18)
         merge_row.addWidget(self.merge)
         merge_row.addWidget(self.merge_count)
-        merge_row.addWidget(QLabel("parts"))
+        merge_row.addWidget(QLabel("colors"))
         merge_row.addStretch(1)
         box.addLayout(merge_row)
 
@@ -139,6 +147,21 @@ class SaveOptionsWidget(QFrame):
         box.addLayout(preview_row)
         return box
 
+    def _parts_section(self):
+        row = QHBoxLayout()
+        row.setSpacing(4)
+        row.addWidget(QLabel("Parts:"), alignment=Qt.AlignLeft)
+        self.parts = QComboBox()
+        for label, _ in PARTS:
+            self.parts.addItem(label)
+        self.parts.setToolTip(
+            "One part per chain or model keeps everything in place as one "
+            "object, but lets the slicer select, hide or set up each chain "
+            "on its own. Colors stay painted inside each part.")
+        row.addWidget(self.parts)
+        row.addStretch(1)
+        return row
+
     def _slicer_section(self):
         row = QHBoxLayout()
         row.setSpacing(4)
@@ -149,6 +172,7 @@ class SaveOptionsWidget(QFrame):
         self.slicer.setToolTip(
             "These slicers store multi-part models in incompatible ways, so "
             "the file has to be written for one of them")
+        self.slicer.currentIndexChanged.connect(self._update_enabled)
         row.addWidget(self.slicer)
         row.addStretch(1)
         return row
@@ -162,6 +186,8 @@ class SaveOptionsWidget(QFrame):
         splitting = self.colors.isChecked()
         self.merge.setEnabled(splitting)
         self.merge_count.setEnabled(splitting and self.merge.isChecked())
+        # full-colour output is one mesh by nature
+        self.parts.setEnabled(SLICERS[self.slicer.currentIndex()][1] != "generic")
 
     def _preview(self):
         from chimerax.core.commands import run
@@ -192,6 +218,10 @@ class SaveOptionsWidget(QFrame):
         flavor = SLICERS[self.slicer.currentIndex()][1]
         if flavor != "prusa":
             args.append("flavor %s" % flavor)
+
+        parts = PARTS[self.parts.currentIndex()][1]
+        if parts and flavor != "generic":
+            args.append("parts %s" % parts)
 
         if not self.check.isChecked():
             args.append("check false")

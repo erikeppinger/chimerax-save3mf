@@ -161,3 +161,47 @@ collapse onto filament 1, silently. Filament usage confirms it:
 (4:6:8:10) exactly and extruder 1 absorbs everything above the tool count.
 
 The exporter therefore warns whenever more than 5 regions are painted.
+
+## Probes J and K: one part per chain (tested 2026-11-11)
+
+Prompted by a report from an OrcaSlicer user printing AlphaFold cofolds, who
+wanted each chain on its own in the slicer. OrcaSlicer's own *Split → To
+objects* and *To parts* separate the chains but drop **all** painting (2.4.2,
+GUI; 268,532 painted triangles before, 0 after), so the split has to happen in
+the export.
+
+Two boxes stand in for two chains in contact: A on the bed, B 2 mm beside it
+and floating 8 mm up, each painted with two extruders.
+`tools/probe_objects.py` writes the probes and reads any 3MF back, slicer
+output included, reporting the paint codes per piece and the distance and
+height difference between the two pieces' centres. Those survive a slicer
+turning the whole model about z while arranging the plate, which raw
+coordinates do not. Written: 28.16 mm apart, B 8.00 mm higher.
+
+| probe | layout | PrusaSlicer 2.9.7 | OrcaSlicer 2.4.2 | Bambu Studio |
+|---|---|---|---|---|
+| J1 | two objects, `mmu_segmentation` | painted, B dropped (27.00 / 0.00) | paint lost, B dropped, rearranged | paint lost, B dropped, rearranged |
+| J2 | one object, two triangle-range volumes, `mmu_segmentation` | **kept** (28.16 / 8.00), painted | merged into one part, paint lost | merged into one part, paint lost |
+| K1 | two objects, `paint_color` | painted, B dropped | painted, B dropped (27.02 / 0.00), rearranged | painted, B dropped (27.08 / 0.00), rearranged |
+| K2 | one object, two components, `paint_color` | split into two objects, B dropped | **kept** (28.16 / 8.00), painted | **kept** (28.16 / 8.00), painted |
+
+Command-line round trips (`--export-3mf`), confirmed in each GUI for the
+layout that works: one object listing *chain A* and *chain B* as parts,
+painting shown, 52 x 30 x 28 mm.
+
+- **Separate objects cannot hold a complex together.** Every slicer drops each
+  object onto the bed; Bambu Studio and OrcaSlicer also rearrange them.
+  PrusaSlicer drops the *object*, so parts inside one keep their places.
+- **Parts of one object can**, in each family's own layout - the same split
+  as for the colour parts: triangle-range volumes for PrusaSlicer (J2),
+  components for Bambu and Orca (K2). Painting inside each part survives.
+- Side observation: PrusaSlicer read Bambu's `paint_color` (K1, K2 kept their
+  codes). Not pursued; it might let one file serve both families.
+
+`parts chain` / `parts model` write J2 (`flavor prusa`) or K2
+(`flavor bambu`). On the hemoglobin alpha/beta dimer (chain A purple with an
+orange patch, chain B lime) both chains and all three colours survived round
+trips through all three slicers with the centre distance unchanged
+(24.68 mm), PrusaSlicer reported the file manifold, and the Original Prusa XL
+slice matched the one-piece export: 288 tool changes each, filament
+19.35/10.85/4.98 g against 19.39/10.87/4.98 g.

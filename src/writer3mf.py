@@ -64,11 +64,13 @@ COLORGROUP_ID = 2
 BASEMATERIALS_ID = 5
 WRAPPER_OBJECT_ID = 1
 FIRST_PART_OBJECT_ID = 10
+PRUSA_CONFIG = "Metadata/Slic3r_PE_model.config"
+BAMBU_CONFIG = "Metadata/model_settings.config"
 
 
 def write_3mf(session, path, models=None, scale=None, size=None, check=True,
               colors=True, max_colors=None, flavor="prusa", paint=True,
-              smoothness=None):
+              smoothness=None, parts=None):
     from chimerax.core.errors import UserError
     from . import colors as color_module, printcheck, scene
 
@@ -77,9 +79,14 @@ def write_3mf(session, path, models=None, scale=None, size=None, check=True,
         raise UserError("Unknown 3MF flavor '%s'; use one of: %s"
                         % (flavor, ", ".join(FLAVORS)))
     flavor = FLAVOR_ALIASES.get(flavor, flavor)
+    if parts not in (None, "chain", "model"):
+        raise UserError("parts is 'chain' or 'model', not '%s'" % parts)
+    if parts and flavor == "fullcolor":
+        raise UserError("parts %s needs a filament flavor (prusa or bambu); "
+                        "full-colour output is one mesh" % parts)
     target = smoothness_target(smoothness)
 
-    geometry = scene.collect_geometry(session, models)
+    geometry = scene.collect_geometry(session, models, parts=parts)
     if geometry.triangle_count == 0:
         raise UserError("Nothing to save as 3MF: no displayed surface geometry. "
                         "Show a molecular surface, cartoon or atoms first.")
@@ -92,7 +99,7 @@ def write_3mf(session, path, models=None, scale=None, size=None, check=True,
     depths = None
     if target is not None:
         geometry, before, depths = _smooth(session, models, geometry, before,
-                                           used_scale, target)
+                                           used_scale, target, parts)
 
     report = printcheck.analyze(geometry)
 
@@ -110,7 +117,7 @@ def write_3mf(session, path, models=None, scale=None, size=None, check=True,
     regions = None
     if colors:
         regions = color_module.build_regions(geometry, max_colors=max_colors)
-        geometry = _sort_by_region(geometry, regions)
+    geometry = _sort_by_region(geometry, regions)
 
     painting = paint and flavor in ("prusa", "bambu") and regions is not None
     if painting and regions.count > MAX_PAINTED_EXTRUDERS:
@@ -118,22 +125,37 @@ def write_3mf(session, path, models=None, scale=None, size=None, check=True,
         # A count this high almost always means continuous colouring, which a
         # filament printer cannot reproduce at all - so name the mode that can
         # before explaining the filament fallback.
+        fallback = (
+            "the parts per %s have meanwhile been written without colour" % parts
+            if parts else
+            "the model has meanwhile been split into separate parts, which "
+            "leaves open edges where they meet")
         log.warn(
             session,
             "%d colors is far more than the %d a filament printer can paint. "
             "For a continuously coloured model &ndash; %s, hydrophobicity, "
             "B-factor &ndash; use %s, which keeps every colour for a "
             "full-colour printer. To print it on filament instead, reduce the "
-            "colours with %s; the model has meanwhile been split into separate "
-            "parts, which leaves open edges where they meet."
+            "colours with %s; %s."
             % (regions.count, MAX_PAINTED_EXTRUDERS,
                log.cmd_link("help mlp", "mlp"),
                log.help_link("flavors", "flavor fullcolor"),
-               log.help_link(text="maxColors %d" % MAX_PAINTED_EXTRUDERS)),
+               log.help_link(text="maxColors %d" % MAX_PAINTED_EXTRUDERS),
+               fallback),
             html=True)
         painting = False
+    elif parts and not paint and regions is not None:
+        # parts carry colour only as painting; there is no per-colour split
+        # inside a part to fall back on
+        from . import log
+        log.warn(session, "paint false with parts %s: the parts are written "
+                          "without colour. Leave paint on to keep the colours "
+                          "inside each part." % parts)
 
-    if painting:
+    if parts:
+        model_xml, extra = _parts_package(session, geometry, regions, flavor,
+                                          painting)
+    elif painting:
         model_xml, extra = _painted_package(session, geometry, regions, flavor)
     elif flavor == "bambu" and regions is not None and regions.count > 1:
         model_xml, extra = _bambu_package(session, geometry, regions)
@@ -143,8 +165,12 @@ def write_3mf(session, path, models=None, scale=None, size=None, check=True,
 
     _write_package(path, model_xml, extra)
 
-    _report(session, path, geometry, used_scale, before, regions, flavor,
-            painting)
+    # unpainted parts carry no colour, so there is no palette to report
+    written_regions = None if parts and not painting else regions
+    _report(session, path, geometry, used_scale, before, written_regions,
+            flavor, painting)
+    if parts:
+        _report_parts(session, geometry, parts)
     _report_smoothness(session, depths, target)
     printcheck.log_report(session, report, quiet=not check)
 
@@ -165,7 +191,7 @@ def smoothness_target(smoothness):
     return float(smoothness)
 
 
-def _smooth(session, models, geometry, before, used_scale, target):
+def _smooth(session, models, geometry, before, used_scale, target, parts=None):
     """Re-collect the scene finer when its flats would show in the print.
 
     Says what it is about to change before doing it, since it makes the file
@@ -192,7 +218,7 @@ def _smooth(session, models, geometry, before, used_scale, target):
         html=True)
 
     with smoothness.Applied(session, p):
-        finer = scene.collect_geometry(session, models)
+        finer = scene.collect_geometry(session, models, parts=parts)
     before = finer.triangle_count
     geometry = scene.weld_vertices(finer)
     geometry, _ = scene.place_for_printing(geometry, scale=used_scale)
@@ -231,23 +257,39 @@ def _thousands(n):
 # ------------------------------------------------------------------ helpers
 
 def _sort_by_region(geometry, regions):
-    """Reorder triangles so each region is one contiguous run.
+    """Reorder triangles so each part, and each region within a part, is one
+    contiguous run.
 
     PrusaSlicer identifies parts by triangle ranges, so the runs have to be
-    contiguous; it costs nothing for the other flavours.
+    contiguous; it costs nothing for the other flavours. Parts (chains or
+    models) come first when the geometry has them, colour regions second.
     """
-    from numpy import argsort
-    from .scene import SceneGeometry
-    order = argsort(regions.labels, kind='stable')
-    regions.labels = regions.labels[order]
-    sources = geometry.triangle_sources
-    return SceneGeometry(
-        geometry.vertices,
-        geometry.triangles[order],
-        geometry.triangle_colors[order],
-        geometry.sources,
-        None if sources is None else sources[order],
-    )
+    from numpy import argsort, lexsort
+    groups = geometry.triangle_groups
+    if regions is None and groups is None:
+        return geometry
+    if groups is None:
+        order = argsort(regions.labels, kind='stable')
+    elif regions is None:
+        order = argsort(groups, kind='stable')
+    else:
+        order = lexsort((regions.labels, groups))     # last key sorts first
+    if regions is not None:
+        regions.labels = regions.labels[order]
+    return geometry.with_arrays(geometry.vertices, geometry.triangles[order],
+                                order)
+
+
+def _group_ranges(geometry):
+    """(first triangle, last triangle) per part, after sorting."""
+    from numpy import bincount
+    counts = bincount(geometry.triangle_groups,
+                      minlength=len(geometry.group_names))
+    ranges, start = [], 0
+    for count in counts:
+        ranges.append((start, start + int(count) - 1))
+        start += int(count)
+    return ranges
 
 
 def _region_ranges(regions):
@@ -269,12 +311,13 @@ def _write_package(path, model_xml, extra_files=None):
             z.writestr(name, data)
 
 
-def _model_header(session, out):
+def _model_header(session, out, prusa_painting=False):
     from chimerax import app_dirs
     from time import strftime
+    extra_ns = ' xmlns:slic3rpe="%s"' % SLIC3RPE_NS if prusa_painting else ""
     out.write('<?xml version="1.0" encoding="UTF-8"?>\n')
-    out.write('<model unit="millimeter" xml:lang="en-US" xmlns="%s" xmlns:m="%s">\n'
-              % (CORE_NS, MAT_NS))
+    out.write('<model unit="millimeter" xml:lang="en-US" xmlns="%s" '
+              'xmlns:m="%s"%s>\n' % (CORE_NS, MAT_NS, extra_ns))
     out.write(' <metadata name="Application">%s %s</metadata>\n'
               % (app_dirs.appname, app_dirs.version))
     out.write(' <metadata name="Title">%s</metadata>\n' % _scene_name(session))
@@ -344,15 +387,8 @@ def _fullcolor_package(session, geometry, colors=True):
         savetxt(out, rows,
                 fmt='     <triangle v1="%d" v2="%d" v3="%d" '
                     'pid="' + str(COLORGROUP_ID) + '" p1="%d" p2="%d" p3="%d"/>')
-    out.write('    </triangles>\n')
-    out.write('   </mesh>\n')
-    out.write('  </object>\n')
-    out.write(' </resources>\n')
-    out.write(' <build>\n')
-    out.write('  <item objectid="%d" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>\n'
-              % WRAPPER_OBJECT_ID)
-    out.write(' </build>\n')
-    out.write('</model>\n')
+    _close_mesh_object(out)
+    _write_build(out)
     return out.getvalue(), {}
 
 
@@ -368,7 +404,7 @@ def _report_fullcolor(session, path, geometry, used_scale, before, colors):
            geometry.vertex_count, span[0], span[1], span[2], used_scale,
            os.path.getsize(path) / (1024.0 * 1024.0),
            "" if before == geometry.triangle_count
-           else ", %d degenerate triangles removed"
+           else ", %d degenerate or doubled triangles removed"
                 % (before - geometry.triangle_count)))
     if colors and geometry.vertex_colors is not None:
         distinct = len(unique(geometry.vertex_colors[:, :3], axis=0))
@@ -393,64 +429,89 @@ def _painted_package(session, geometry, regions, flavor):
     prusa = (flavor == "prusa")
     attribute = "slic3rpe:mmu_segmentation" if prusa else "paint_color"
 
+    name = _scene_name(session)
     out = io.StringIO()
-    from chimerax import app_dirs
-    from time import strftime
-    out.write('<?xml version="1.0" encoding="UTF-8"?>\n')
-    extra_ns = ' xmlns:slic3rpe="%s"' % SLIC3RPE_NS if prusa else ""
-    out.write('<model unit="millimeter" xml:lang="en-US" xmlns="%s" '
-              'xmlns:m="%s"%s>\n' % (CORE_NS, MAT_NS, extra_ns))
-    out.write(' <metadata name="Application">%s %s</metadata>\n'
-              % (app_dirs.appname, app_dirs.version))
-    out.write(' <metadata name="Title">%s</metadata>\n' % _scene_name(session))
-    out.write(' <metadata name="CreationDate">%s</metadata>\n'
-              % strftime("%Y-%m-%d"))
+    _model_header(session, out, prusa_painting=prusa)
     out.write(' <resources>\n')
     _write_color_resources(out, regions)
-    out.write('  <object id="%d" type="model" name="%s">\n'
-              % (WRAPPER_OBJECT_ID, _scene_name(session)))
-    out.write('   <mesh>\n')
-    out.write('    <vertices>\n')
-    _write_vertices(out, geometry.vertices)
-    out.write('    </vertices>\n')
-    out.write('    <triangles>\n')
+    _open_mesh_object(out, WRAPPER_OBJECT_ID, name, geometry.vertices)
     _write_painted_triangles(out, geometry.triangles, regions.labels, attribute)
-    out.write('    </triangles>\n')
-    out.write('   </mesh>\n')
-    out.write('  </object>\n')
-    out.write(' </resources>\n')
-    out.write(' <build>\n')
-    out.write('  <item objectid="%d" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>\n'
-              % WRAPPER_OBJECT_ID)
-    out.write(' </build>\n')
-    out.write('</model>\n')
+    _close_mesh_object(out)
+    _write_build(out)
 
-    name = _scene_name(session)
     if prusa:
-        config = (
-            '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n'
-            ' <object id="%d">\n'
-            '  <metadata type="object" key="name" value="%s"/>\n'
-            '  <volume firstid="0" lastid="%d">\n'
-            '   <metadata type="volume" key="name" value="%s"/>\n'
-            '   <mesh edges_fixed="0" degenerate_facets="0" facets_removed="0"'
-            ' facets_reversed="0" backwards_edges="0"/>\n'
-            "  </volume>\n </object>\n</config>\n"
-            % (WRAPPER_OBJECT_ID, name, len(geometry.triangles) - 1, name))
-        extra = {"Metadata/Slic3r_PE_model.config": config}
+        extra = {PRUSA_CONFIG: _prusa_volumes_config(
+            name, [(0, len(geometry.triangles) - 1, name, None)])}
     else:
-        config = (
-            '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n'
-            '  <object id="%d">\n'
-            '   <metadata key="name" value="%s"/>\n'
-            '   <metadata key="extruder" value="1"/>\n'
-            '    <part id="%d" subtype="normal_part">\n'
-            '     <metadata key="name" value="%s"/>\n'
-            '     <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>\n'
-            "    </part>\n  </object>\n</config>\n"
-            % (WRAPPER_OBJECT_ID, name, WRAPPER_OBJECT_ID, name))
-        extra = {"Metadata/model_settings.config": config}
+        extra = {BAMBU_CONFIG: _bambu_parts_config(
+            name, [(WRAPPER_OBJECT_ID, name, None)])}
     return out.getvalue(), extra
+
+
+# ------------------------------------------------------ one part per chain
+
+def _parts_package(session, geometry, regions, flavor, painting):
+    """One object holding one part per chain (or model), painted inside.
+
+    Separate objects would be simpler, but every slicer drops each object
+    onto the bed and Bambu/Orca also rearrange them, which takes a complex
+    apart. Parts of one object keep their places (probes J and K, see
+    probes/RESULTS.md). Each slicer family reads only its own layout, as with
+    the colour parts: triangle-range volumes for PrusaSlicer, components for
+    Bambu Studio and OrcaSlicer.
+    """
+    prusa = (flavor == "prusa")
+    attribute = "slic3rpe:mmu_segmentation" if prusa else "paint_color"
+    labels = regions.labels if painting else None
+    ranges = [(i, first, last)
+              for i, (first, last) in enumerate(_group_ranges(geometry))
+              if last >= first]
+    names = [_xml_escape(n) for n in geometry.group_names]
+    name = _scene_name(session)
+
+    out = io.StringIO()
+    _model_header(session, out, prusa_painting=prusa and painting)
+    out.write(' <resources>\n')
+    _write_color_resources(out, regions if painting else None)
+
+    def triangles(rows, first, last):
+        if labels is None:
+            _write_triangles(out, rows, None)
+        else:
+            _write_painted_triangles(out, rows, labels[first:last + 1],
+                                     attribute)
+
+    if prusa:
+        _open_mesh_object(out, WRAPPER_OBJECT_ID, name, geometry.vertices)
+        for _, first, last in ranges:
+            triangles(geometry.triangles[first:last + 1], first, last)
+        _close_mesh_object(out)
+        extra = {PRUSA_CONFIG: _prusa_volumes_config(
+            name, [(first, last, names[i], None) for i, first, last in ranges])}
+    else:
+        ids = [FIRST_PART_OBJECT_ID + i for i, _, _ in ranges]
+        for object_id, (i, first, last) in zip(ids, ranges):
+            vertices, rows = _submesh(geometry, first, last)
+            _open_mesh_object(out, object_id, names[i], vertices)
+            triangles(rows, first, last)
+            _close_mesh_object(out)
+        _write_components_object(out, name, ids)
+        extra = {BAMBU_CONFIG: _bambu_parts_config(
+            name, [(object_id, names[i], None)
+                   for object_id, (i, _, _) in zip(ids, ranges)])}
+    _write_build(out)
+    return out.getvalue(), extra
+
+
+def _report_parts(session, geometry, parts):
+    from numpy import bincount
+    counts = bincount(geometry.triangle_groups,
+                      minlength=len(geometry.group_names))
+    listed = ["%s (%s triangles)" % (n, _thousands(c))
+              for n, c in zip(geometry.group_names, counts) if c]
+    session.logger.info("%d part%s, one per %s, kept in place: %s"
+                        % (len(listed), "" if len(listed) == 1 else "s",
+                           parts, ", ".join(listed)))
 
 
 def _write_painted_triangles(out, triangles, labels, attribute):
@@ -477,48 +538,40 @@ def _write_painted_triangles(out, triangles, labels, attribute):
 
 def _prusa_package(session, geometry, regions, generic=False):
     """One object, one mesh, regions as triangle ranges in the Prusa config."""
+    name = _scene_name(session)
     out = io.StringIO()
     _model_header(session, out)
     out.write(' <resources>\n')
     _write_color_resources(out, regions)
-    out.write('  <object id="%d" type="model" name="%s">\n'
-              % (WRAPPER_OBJECT_ID, _scene_name(session)))
-    out.write('   <mesh>\n')
-    out.write('    <vertices>\n')
-    _write_vertices(out, geometry.vertices)
-    out.write('    </vertices>\n')
-    out.write('    <triangles>\n')
+    _open_mesh_object(out, WRAPPER_OBJECT_ID, name, geometry.vertices)
     _write_triangles(out, geometry.triangles,
                      None if regions is None else regions.labels)
-    out.write('    </triangles>\n')
-    out.write('   </mesh>\n')
-    out.write('  </object>\n')
-    out.write(' </resources>\n')
-    out.write(' <build>\n')
-    out.write('  <item objectid="%d" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>\n'
-              % WRAPPER_OBJECT_ID)
-    out.write(' </build>\n')
-    out.write('</model>\n')
+    _close_mesh_object(out)
+    _write_build(out)
 
     extra = {}
     if regions is not None and regions.count > 1 and not generic:
-        extra["Metadata/Slic3r_PE_model.config"] = _prusa_config(
-            session, regions)
+        extra[PRUSA_CONFIG] = _prusa_volumes_config(
+            name, [(first, last, _xml_escape(regions.names[i]), i + 1)
+                   for i, (first, last) in enumerate(_region_ranges(regions))])
     return out.getvalue(), extra
 
 
-def _prusa_config(session, regions):
+def _prusa_volumes_config(object_name, volumes):
+    """PrusaSlicer's model config: the volumes of the one object, each a
+    triangle range. volumes holds (first triangle, last triangle, name,
+    extruder or None); names are already XML-escaped."""
     out = io.StringIO()
     out.write('<?xml version="1.0" encoding="UTF-8"?>\n<config>\n')
     out.write(' <object id="%d">\n' % WRAPPER_OBJECT_ID)
     out.write('  <metadata type="object" key="name" value="%s"/>\n'
-              % _xml_escape(_scene_name(session)))
-    for i, (first, last) in enumerate(_region_ranges(regions)):
+              % object_name)
+    for first, last, name, extruder in volumes:
         out.write('  <volume firstid="%d" lastid="%d">\n' % (first, last))
-        out.write('   <metadata type="volume" key="name" value="%s"/>\n'
-                  % _xml_escape(regions.names[i]))
-        out.write('   <metadata type="volume" key="extruder" value="%d"/>\n'
-                  % (i + 1))
+        out.write('   <metadata type="volume" key="name" value="%s"/>\n' % name)
+        if extruder is not None:
+            out.write('   <metadata type="volume" key="extruder" value="%d"/>\n'
+                      % extruder)
         out.write('   <mesh edges_fixed="0" degenerate_facets="0"'
                   ' facets_removed="0" facets_reversed="0" backwards_edges="0"/>\n')
         out.write('  </volume>\n')
@@ -530,62 +583,86 @@ def _prusa_config(session, regions):
 
 def _bambu_package(session, geometry, regions):
     """One component object per region, parts declared in the Bambu config."""
+    name = _scene_name(session)
     out = io.StringIO()
     _model_header(session, out)
     out.write(' <resources>\n')
     _write_color_resources(out, regions)
 
     ranges = _region_ranges(regions)
+    ids = [FIRST_PART_OBJECT_ID + i for i in range(len(ranges))]
+    names = [_xml_escape(n) for n in regions.names]
     for i, (first, last) in enumerate(ranges):
         vertices, triangles = _submesh(geometry, first, last)
-        out.write('  <object id="%d" type="model" name="%s" pid="%d" pindex="%d">\n'
-                  % (FIRST_PART_OBJECT_ID + i, _xml_escape(regions.names[i]),
-                     BASEMATERIALS_ID, i))
-        out.write('   <mesh>\n')
-        out.write('    <vertices>\n')
-        _write_vertices(out, vertices)
-        out.write('    </vertices>\n')
-        out.write('    <triangles>\n')
+        _open_mesh_object(out, ids[i], names[i], vertices,
+                          ' pid="%d" pindex="%d"' % (BASEMATERIALS_ID, i))
         _write_triangles(out, triangles, None)
-        out.write('    </triangles>\n')
-        out.write('   </mesh>\n')
-        out.write('  </object>\n')
+        _close_mesh_object(out)
+    _write_components_object(out, name, ids)
+    _write_build(out)
 
+    return out.getvalue(), {BAMBU_CONFIG: _bambu_parts_config(
+        name, [(ids[i], names[i], i + 1) for i in range(len(ranges))])}
+
+
+def _bambu_parts_config(object_name, parts):
+    """Bambu Studio's and OrcaSlicer's model config: the parts of the one
+    object. parts holds (object id, name, extruder or None); names are
+    already XML-escaped."""
+    out = io.StringIO()
+    out.write('<?xml version="1.0" encoding="UTF-8"?>\n<config>\n')
+    out.write('  <object id="%d">\n' % WRAPPER_OBJECT_ID)
+    out.write('   <metadata key="name" value="%s"/>\n' % object_name)
+    out.write('   <metadata key="extruder" value="1"/>\n')
+    for object_id, name, extruder in parts:
+        out.write('    <part id="%d" subtype="normal_part">\n' % object_id)
+        out.write('     <metadata key="name" value="%s"/>\n' % name)
+        if extruder is not None:
+            out.write('     <metadata key="extruder" value="%d"/>\n' % extruder)
+        out.write('     <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>\n')
+        out.write('    </part>\n')
+    out.write('  </object>\n</config>\n')
+    return out.getvalue()
+
+
+# ------------------------------------------------------- shared XML pieces
+
+def _open_mesh_object(out, object_id, name, vertices, attributes=""):
+    """Start an object holding a mesh; the caller writes the triangles."""
+    out.write('  <object id="%d" type="model" name="%s"%s>\n'
+              % (object_id, name, attributes))
+    out.write('   <mesh>\n')
+    out.write('    <vertices>\n')
+    _write_vertices(out, vertices)
+    out.write('    </vertices>\n')
+    out.write('    <triangles>\n')
+
+
+def _close_mesh_object(out):
+    out.write('    </triangles>\n')
+    out.write('   </mesh>\n')
+    out.write('  </object>\n')
+
+
+def _write_components_object(out, name, object_ids):
+    """The one object of the build, assembled from other objects in place."""
     out.write('  <object id="%d" type="model" name="%s">\n'
-              % (WRAPPER_OBJECT_ID, _scene_name(session)))
+              % (WRAPPER_OBJECT_ID, name))
     out.write('   <components>\n')
-    for i in range(len(ranges)):
-        out.write('    <component objectid="%d"/>\n' % (FIRST_PART_OBJECT_ID + i))
+    for object_id in object_ids:
+        out.write('    <component objectid="%d"/>\n' % object_id)
     out.write('   </components>\n')
     out.write('  </object>\n')
+
+
+def _write_build(out):
+    """Close the resources and put the one object on the plate, unmoved."""
     out.write(' </resources>\n')
     out.write(' <build>\n')
     out.write('  <item objectid="%d" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>\n'
               % WRAPPER_OBJECT_ID)
     out.write(' </build>\n')
     out.write('</model>\n')
-
-    return out.getvalue(), {
-        "Metadata/model_settings.config": _bambu_config(session, regions)
-    }
-
-
-def _bambu_config(session, regions):
-    out = io.StringIO()
-    out.write('<?xml version="1.0" encoding="UTF-8"?>\n<config>\n')
-    out.write('  <object id="%d">\n' % WRAPPER_OBJECT_ID)
-    out.write('   <metadata key="name" value="%s"/>\n'
-              % _xml_escape(_scene_name(session)))
-    out.write('   <metadata key="extruder" value="1"/>\n')
-    for i, name in enumerate(regions.names):
-        out.write('    <part id="%d" subtype="normal_part">\n'
-                  % (FIRST_PART_OBJECT_ID + i))
-        out.write('     <metadata key="name" value="%s"/>\n' % _xml_escape(name))
-        out.write('     <metadata key="extruder" value="%d"/>\n' % (i + 1))
-        out.write('     <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>\n')
-        out.write('    </part>\n')
-    out.write('  </object>\n</config>\n')
-    return out.getvalue()
 
 
 def _submesh(geometry, first, last):
@@ -637,14 +714,15 @@ def _report(session, path, geometry, used_scale, triangles_before_weld,
         "(scale %.4f mm/\N{ANGSTROM SIGN}), %.1f MB%s"
         % (os.path.basename(path), geometry.triangle_count, geometry.vertex_count,
            span[0], span[1], span[2], used_scale, size_mb,
-           "" if welded == 0 else ", %d degenerate triangles removed" % welded))
+           "" if welded == 0 else
+           ", %d degenerate or doubled triangles removed" % welded))
 
     if regions is None:
         return
 
     if regions.merged:
         session.logger.info(
-            "%d distinct colors merged into %d printable parts "
+            "%d distinct colors merged into %d printable colors "
             "(mean color shift \N{GREEK CAPITAL LETTER DELTA}E %.1f), "
             "flavor %s" % (regions.distinct, regions.count, regions.delta_e, flavor))
     else:
@@ -673,7 +751,7 @@ def _report(session, path, geometry, used_scale, triangles_before_weld,
     if regions.count > MAX_REGIONS_BEFORE_WARNING:
         log.warn(
             session,
-            "%d parts is a lot to assign by hand in a slicer. Run %s to see "
+            "%d colors is a lot to assign by hand in a slicer. Run %s to see "
             "what merging them would cost, then export with %s."
             % (regions.count, log.cmd_link("3mf palette"),
                log.help_link(text="maxColors N")),

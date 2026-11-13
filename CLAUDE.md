@@ -52,6 +52,7 @@ The export is a pipeline, one module per stage, all under `src/`:
 
 ```
 scene.collect_geometry    walk displayed drawings -> triangle soup + colour per triangle
+                          (+ chain or model per triangle with parts=)
 scene.weld_vertices       merge coincident vertices so the mesh is connected
 scene.place_for_printing  scale to mm, move into the positive octant
 smoothness.measure/plan   flat-facet depth at print size; if too deep, finer
@@ -86,6 +87,13 @@ each one.
 `flavor fullcolor` (`_fullcolor_package`) instead writes one mesh with a colour
 per vertex, for full-colour printers and 3MF viewers.
 
+`parts chain|model` (`_parts_package`) splits by chain or model instead of by
+colour, in the same two layouts, and keeps the painting inside each part.
+Surfaces are assigned exactly (`vertex_to_atom_map`); atoms, bonds and ribbons
+are one drawing for all chains: ribbons are divided by the residue ranges
+ChimeraX records, and each sphere or cylinder goes whole to the nearest drawn atom's
+chain.
+
 ### Facts established by experiment, not documentation
 
 These cost real time to discover. Do not "correct" them from a spec or a blog
@@ -101,6 +109,10 @@ post without re-running the probes.
 - **PrusaSlicer ignores `m:colorgroup` and `basematerials`** on import. The
   filament flavours write them as well for generic viewers; for `fullcolor`
   the per-vertex `m:colorgroup` is the colour payload itself.
+- **Separate objects cannot hold an assembly together.** Every slicer drops
+  each object onto the bed, and Bambu/Orca rearrange them; parts of one object
+  keep their places (probes J, K). OrcaSlicer's own Split (to objects or to
+  parts) drops all painting.
 - **18.4 s per tool change** on an Original Prusa XL at 0.20 mm, fitted over
   eight colour counts. The tool-change count itself is extruders-per-layer less
   one, summed over layers, which matches G-code within ~1%.

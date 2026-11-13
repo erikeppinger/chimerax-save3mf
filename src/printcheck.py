@@ -106,9 +106,9 @@ class PrintReport:
 
         if self.open_shells:
             out.append(
-                "%d of %d surfaces are not closed. Bond cylinders have no end "
-                "caps and clipped surfaces are cut open, which is normal in "
-                "ChimeraX; slicers close them when slicing."
+                "%d of %d surfaces are not closed, usually surfaces cut open "
+                "by a clipping plane. Slicers close them when slicing, but "
+                "report the mesh as having open edges."
                 % (self.open_shells, self.shell_count))
         return out
 
@@ -411,7 +411,7 @@ def _surface_samples(vertices, triangles, labels, tau, budget=SAMPLE_BUDGET):
     the distance threshold - which would wrongly fuse things that really are
     apart - large triangles are sampled across their face.
     """
-    from numpy import ceil, clip, stack, vstack
+    from numpy import ceil, clip, vstack
 
     vertex_shell = empty(len(vertices), dtype=int64)
     vertex_shell[triangles.ravel()] = repeat(labels, 3)

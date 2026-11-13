@@ -35,6 +35,8 @@ class _Save3MFAPI(BundleAPI):
                     'max_colors': PositiveIntArg,
                     'flavor': EnumOf(FLAVORS),
                     'paint': BoolArg,
+                    # one slicer part per chain or per model, in place
+                    'parts': EnumOf(('chain', 'model')),
                     # deepest flat facet allowed, in mm, or 'off'
                     'smoothness': Or(EnumOf(('off',)), FloatArg),
                 }

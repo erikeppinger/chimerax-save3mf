@@ -154,7 +154,7 @@ def log_palette(session, names, hex_colors, counts=None, areas=None,
             extra += '<td align="right">&nbsp;%.1f%%</td>' % (100.0 * areas[i] / total)
         rows.append(
             '<tr><td style="background:%s;width:2em">&nbsp;</td>'
-            '<td>&nbsp;part %d</td><td>&nbsp;%s</td>%s</tr>'
+            '<td>&nbsp;color %d</td><td>&nbsp;%s</td>%s</tr>'
             % (hex_color, i + 1, _escape(name), extra))
     if shown < len(names):
         rows.append('<tr><td></td><td colspan="4">&nbsp;&hellip; and %d more'
