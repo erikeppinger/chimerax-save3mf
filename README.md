@@ -238,7 +238,7 @@ area but **how many layers it appears in**, since it forces a tool change on
 each one. A part covering 0.4% of the model can cost half an hour:
 
 ```
-Part 5 (1a3n_D SES surface red) is 0.4% of the model but costs about 16m of
+Color 5 (1a3n_D SES surface red) is 0.4% of the model but costs about 16m of
 tool changes, because it appears in 52 of 269 layers. Dropping it with
 'maxColors 4' would get that time back.
 ```
@@ -290,16 +290,18 @@ chain against the calibration runs.
 .\tests\run_all.ps1
 ```
 
-Four stages, each of which fails the run:
+Six stages, each of which fails the run:
 
 | Stage | What it proves |
 |---|---|
+| **tutorial page** | the help page generated from `docs/printing-protein-models.md` matches it |
+| **lint** | [Ruff](#linting) finds nothing with the rules in `pyproject.toml` |
 | **install** | `devel install` succeeded **and** the installed bytes match `src/` — a failed build silently leaves the old version in place, so a whole run can otherwise pass against stale code |
 | **export tests** | 73 checks over real exported files: geometry matches ChimeraX's own STL export, `size` is exact, nothing sits at negative coordinates, painting covers every triangle, split parts tile the mesh with no gaps, one part per chain keeps every chain's colours, the >15-colour fallback works, smoothing stays within its target, an empty scene errors clearly |
-| **slicers** | PrusaSlicer loads the painted export as manifold, preserves the painting through a round trip and **actually slices it**; Bambu Studio and OrcaSlicer preserve `paint_color`. The tool-change estimate is checked against the real G-code and must stay within 5% |
+| **slicers** | PrusaSlicer loads the painted export as manifold, preserves the painting through a round trip and **actually slices it**; Bambu Studio and OrcaSlicer preserve `paint_color`; all three keep a per-chain export as one object with every chain a painted part. The tool-change estimate is checked against the real G-code and must stay within 5% |
 | **wheel** | `devel build` produces a wheel containing both the package and its documentation |
 
-Slicers that are not installed are skipped, not failed.
+Slicers and Ruff, when not installed, are skipped, not failed.
 
 The real slice matters: the negative-coordinate bug passed every round-trip
 check and was caught only by slicing, because PrusaSlicer's GUI loader
@@ -317,6 +319,27 @@ Individual pieces can be run on their own:
 
 Note: the `python` on PATH is the Microsoft Store stub and does not run.
 Use ChimeraX's bundled interpreter as above.
+
+### Linting
+
+[Ruff](https://docs.astral.sh/ruff/) checks for undefined and unused names,
+syntax errors and likely mistakes (the pyflakes, E9 and flake8-bugbear rules;
+see `[tool.ruff]` in `pyproject.toml`). It is a linter only: the code is
+formatted by hand, so `ruff format` is not used. Ruff is a single program and
+needs no Python of its own; install it once, outside the repository and
+ChimeraX:
+
+```bash
+& "C:\Program Files\ChimeraX 1.12\bin\python.exe" -m pip install --target "$env:LOCALAPPDATA\Programs\ruff" ruff
+```
+
+```bash
+& "$env:LOCALAPPDATA\Programs\ruff\bin\ruff.exe" check .
+```
+
+`run_all.ps1` finds it there, through `$env:RUFF`, or on `PATH`. Scripts that
+run inside ChimeraX use its `session` without defining it; mark such lines
+`# noqa: F821`, as the tests do.
 
 ### A note on the suite itself
 

@@ -154,10 +154,10 @@ def _log_palette_with_cost(session, regions, cost):
 def _warn_costly(session, regions, cost):
     """Say plainly when a part buys very little for a lot of print time."""
     from . import log
-    for r, area_fraction, change_share in cost.costly_regions():
+    for r, area_fraction, _change_share in cost.costly_regions():
         log.warn(
             session,
-            "Part %d (%s) is %.1f%% of the model but costs about %s of tool "
+            "Color %d (%s) is %.1f%% of the model but costs about %s of tool "
             "changes, because it appears in %d of %d layers. Dropping it with "
             "%s would get that time back."
             % (r + 1, log.escape(regions.names[r]), 100.0 * area_fraction,

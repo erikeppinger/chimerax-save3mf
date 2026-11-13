@@ -36,8 +36,8 @@ for title, commands in SCENES:
         run(session, c)            # noqa: F821
     captured = []
     logger.info = capture
-    run(session, "3mf palette maxColors 5" if "merged" in title
-        else "3mf palette")        # noqa: F821
+    run(session,                   # noqa: F821
+        "3mf palette maxColors 5" if "merged" in title else "3mf palette")
     logger.info = original_info
     body = "\n".join(m if is_html else "<p>%s</p>" % m for m, is_html in captured)
     blocks.append("<h2>%s</h2>\n%s" % (title, body))

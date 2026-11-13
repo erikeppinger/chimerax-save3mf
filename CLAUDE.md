@@ -26,6 +26,9 @@ does not run. Use ChimeraX's interpreter for every script.
 
 # build a wheel into dist/
 & "C:\Program Files\ChimeraX 1.12\bin\ChimeraX-console.exe" --nogui --exit --silent --cmd "devel build . exit true"
+
+# lint (rules in pyproject.toml; linter only, never `ruff format`)
+& "$env:LOCALAPPDATA\Programs\ruff\bin\ruff.exe" check .
 ```
 
 To run one test, edit the `TESTS` list at the bottom of `tests/test_export.py`;

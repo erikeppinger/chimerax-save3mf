@@ -225,7 +225,7 @@ def _region_count(root, configs):
                 painted_codes.add(value)
     if painted_codes:
         return len(painted_codes)
-    for name, text in configs.items():
+    for text in configs.values():
         cfg = ET.fromstring(text)
         volumes = cfg.findall(".//volume")
         if volumes:

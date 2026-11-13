@@ -10,7 +10,6 @@ checked without slicing again.
 
 import json
 import os
-import re
 import sys
 import zipfile
 import xml.etree.ElementTree as ET

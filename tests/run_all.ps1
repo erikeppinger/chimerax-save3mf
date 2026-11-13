@@ -6,6 +6,8 @@
     Stages, each of which fails the run:
       0. docs             the help page generated from the printing tutorial
                           must match its Markdown source
+     0b. lint             ruff check with the rules in pyproject.toml
+                          (skipped when ruff is not installed)
       1. install          devel install must succeed AND actually replace the
                           installed files - a failed build silently leaves the
                           previous version in place, so a whole test run can
@@ -85,6 +87,28 @@ if ($script:LastToolExit -ne 0) {
     Fail "tutorial page" (($docsOut | Select-Object -Last 1) -join "")
 } else {
     Pass "tutorial page" "matches docs/printing-protein-models.md"
+}
+
+# ------------------------------------------------------------------- 0b. lint
+# Ruff, with the rules in pyproject.toml. Not shipped with anything here: it
+# lives in its own folder, or wherever $env:RUFF points, or on PATH.
+Write-Host "`n== lint ==" -ForegroundColor Cyan
+$Ruff = $env:RUFF
+if (-not $Ruff) { $Ruff = "$env:LOCALAPPDATA\Programs\ruff\bin\ruff.exe" }
+if (-not (Test-Path $Ruff)) {
+    $onPath = Get-Command ruff -ErrorAction SilentlyContinue
+    $Ruff = if ($onPath) { $onPath.Source } else { $null }
+}
+if (-not $Ruff) {
+    Skip "ruff" "not installed (see the Linting section of the README)"
+} else {
+    $lint = Invoke-Tool $Ruff @("check", "--output-format", "concise", "--no-cache", $Bundle)
+    if ($script:LastToolExit -ne 0) {
+        Fail "ruff" "findings below"
+        $lint | Select-Object -First 20 | ForEach-Object { Write-Host "      $_" }
+    } else {
+        Pass "ruff" "no findings"
+    }
 }
 
 # ---------------------------------------------------------------- 1. install

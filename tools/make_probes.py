@@ -302,7 +302,7 @@ def probe_f():
     their own config file rather than in Slic3r_PE_model.config.
     """
     parts, comps, cfg_parts = [], [], []
-    for i, (cname, chex) in enumerate(COLORS):
+    for i, (cname, _hex) in enumerate(COLORS):
         verts, tris = box(0, 0, i * 10.0, 30.0, 30.0, (i + 1) * 10.0)
         oid = 10 + i
         parts.append(
@@ -361,7 +361,7 @@ def probe_g():
     bases = "\n".join(
         '   <base name="%s" displaycolor="%s"/>' % (n, c) for n, c in COLORS
     )
-    for i, (cname, chex) in enumerate(COLORS):
+    for i, (cname, _hex) in enumerate(COLORS):
         verts, tris = box(0, 0, i * 10.0, 30.0, 30.0, (i + 1) * 10.0)
         oid = 10 + i
         extra = ['pid="2" p1="%d" p2="%d" p3="%d"' % (i, i, i)] * len(tris)
