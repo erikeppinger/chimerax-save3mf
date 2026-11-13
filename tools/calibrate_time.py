@@ -38,13 +38,23 @@ def export(k):
     args = "size %d" % SIZE_MM
     args += " colors false" if k == 1 else " maxColors %d" % k
     cmd = "%s; save %s %s; exit" % (SCENE, path.replace("\\", "/"), args)
+    # a file left from an earlier run would otherwise pass for a fresh one
+    # when the export fails; ChimeraX exits cleanly after a failed command,
+    # so its return code cannot be relied on
+    _remove(path)
     subprocess.run([CHIMERAX, "--nogui", "--exit", "--silent", "--cmd", cmd],
                    capture_output=True)
     return path if os.path.exists(path) else None
 
 
+def _remove(path):
+    if os.path.exists(path):
+        os.remove(path)
+
+
 def slice_it(path, k):
     gcode = os.path.join(OUT, "cal_%02d.gcode" % k)
+    _remove(gcode)                      # see export()
     subprocess.run([PRUSA, "--slice", "--binary-gcode=0"] + PROFILE +
                    ["-o", gcode, path], capture_output=True)
     if not os.path.exists(gcode):

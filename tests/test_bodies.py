@@ -86,7 +86,28 @@ def main():
           % ("cavity is not called a loose piece", report.loose_count,
              "pass" if loose_ok else "FAIL"))
 
-    print("\nBODY TESTS: %d passed, %d failed" % (len(CASES) + 1 - failures,
+    # A cavity is not a printed piece, so it must not be measured as the
+    # thinnest one. Cavities normally fuse with their container, but the
+    # overlap test stops after MAX_OVERLAP_TESTS candidate pairs; past that a
+    # cavity stays a body of its own. Setting the limit to 0 reaches that
+    # state without building hundreds of shapes: two 20 mm boxes 10 mm apart,
+    # a 0.5 mm cavity inside the first. The thinnest piece is 20 mm.
+    limit = printcheck.MAX_OVERLAP_TESTS
+    printcheck.MAX_OVERLAP_TESTS = 0
+    try:
+        report = printcheck.analyze(build(
+            [(0, 0, 0, 20, 20, 20), (30, 0, 0, 50, 20, 20),
+             (9.75, 9.75, 9.75, 10.25, 10.25, 10.25)], (2,)))
+    finally:
+        printcheck.MAX_OVERLAP_TESTS = limit
+    thin_ok = (report.thinnest_body_mm is not None
+               and abs(report.thinnest_body_mm - 20.0) < 1e-6)
+    failures += 0 if thin_ok else 1
+    print("  %-46s thinnest %s/20.0 mm  %s"
+          % ("unfused cavity is not the thinnest piece",
+             report.thinnest_body_mm, "pass" if thin_ok else "FAIL"))
+
+    print("\nBODY TESTS: %d passed, %d failed" % (len(CASES) + 2 - failures,
                                                   failures))
     return failures
 

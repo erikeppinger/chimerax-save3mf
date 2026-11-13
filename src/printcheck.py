@@ -317,12 +317,19 @@ def _describe_bodies(vertices, triangles, labels, bodies, volumes, cavity,
 
 
 def _thinnest_body(vertices, triangles, labels, bodies, solid):
-    """Smallest bounding-box dimension over the separate bodies."""
+    """Smallest bounding-box dimension over the separate bodies.
+
+    Only solid shells count. A cavity normally fuses with the body around
+    it, but _fuse_interpenetrating stops after MAX_OVERLAP_TESTS candidate
+    pairs, and a cavity left as a body of its own is not a printed piece:
+    measured, it would report a void as a feature too thin to print.
+    """
     n_bodies = int(bodies.max()) + 1
     body_of_triangle = bodies[labels]
+    solid_triangle = solid[labels]
     thinnest = None
     for b in range(n_bodies):
-        tris = triangles[body_of_triangle == b]
+        tris = triangles[(body_of_triangle == b) & solid_triangle]
         if len(tris) == 0:
             continue
         pts = vertices[unique(tris)]
