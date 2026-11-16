@@ -46,6 +46,13 @@ bonds drawn as thick cylinders and, where pieces need joining, struts. For
 1ubq the supports are all hydrogen bonds; a less compact structure also gets
 struts.
 
+The presets change the structure as well as its look. They delete the solvent,
+and the ribbon presets also delete the hydrogens. A later `show` cannot bring
+these atoms back, and a session saved afterwards no longer contains them. The
+file you opened is not changed; reopen it to get them back. If a water matters
+for the model, such as one bridging a ligand, save the session before running
+a preset.
+
 <a name="supports"></a>
 
 ### 3. Check the supports
