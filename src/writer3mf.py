@@ -24,6 +24,8 @@ viewers do and they cost almost nothing.
 import io
 import zipfile
 
+from .rows import unique_rows
+
 CORE_NS = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
 MAT_NS = "http://schemas.microsoft.com/3dmanufacturing/material/2015/02"
 SLIC3RPE_NS = "http://schemas.slic3r.org/3mf/2017/06"
@@ -72,7 +74,7 @@ def write_3mf(session, path, models=None, scale=None, size=None, check=True,
               colors=True, max_colors=None, flavor="prusa", paint=True,
               smoothness=None, parts=None):
     from chimerax.core.errors import UserError
-    from . import colors as color_module, printcheck, scene
+    from . import scene
 
     flavor = flavor.lower()
     if flavor not in FLAVORS:
@@ -85,28 +87,48 @@ def write_3mf(session, path, models=None, scale=None, size=None, check=True,
         raise UserError("parts %s needs a filament flavor (prusa or bambu); "
                         "full-colour output is one mesh" % parts)
     target = smoothness_target(smoothness)
+    from .progress import Progress
+    progress = Progress(session)
 
-    geometry = scene.collect_geometry(session, models, parts=parts)
-    if geometry.triangle_count == 0:
-        raise UserError("Nothing to save as 3MF: no displayed surface geometry. "
-                        "Show a molecular surface, cartoon or atoms first.")
+    try:
+        progress.step("reading the scene")
+        geometry = scene.collect_geometry(session, models, parts=parts)
+        if geometry.triangle_count == 0:
+            raise UserError("Nothing to save as 3MF: no displayed surface "
+                            "geometry. Show a molecular surface, cartoon or "
+                            "atoms first.")
+        _write(session, path, geometry, models, scale, size, check, colors,
+               max_colors, flavor, paint, target, parts, progress)
+    finally:
+        progress.done()
 
+
+def _write(session, path, geometry, models, scale, size, check, colors,
+           max_colors, flavor, paint, target, parts, progress):
+    from . import colors as color_module, printcheck, scene
+
+    progress.size(geometry.triangle_count)
+    progress.step("joining the mesh")
     before = geometry.triangle_count
     geometry = scene.weld_vertices(geometry)
+    progress.tick()
     geometry, used_scale = scene.place_for_printing(
         geometry, scale=1.0 if scale is None else scale, size=size)
+    progress.tick()
 
     depths = None
     if target is not None:
         geometry, before, depths = _smooth(session, models, geometry, before,
-                                           used_scale, target, parts)
+                                           used_scale, target, parts, progress)
 
+    progress.step("checking printability")
     report = printcheck.analyze(geometry)
 
     # Full colour is a different job from filament assignment: a full-colour
     # printer wants the colour of every vertex, not a handful of regions, so
     # none of the clustering or extruder machinery applies.
     if flavor == "fullcolor":
+        progress.step("writing the file")
         model_xml, extra = _fullcolor_package(session, geometry, colors)
         _write_package(path, model_xml, extra)
         _report_fullcolor(session, path, geometry, used_scale, before, colors)
@@ -116,34 +138,33 @@ def write_3mf(session, path, models=None, scale=None, size=None, check=True,
 
     regions = None
     if colors:
+        progress.step("grouping the colors")
         regions = color_module.build_regions(geometry, max_colors=max_colors)
     geometry = _sort_by_region(geometry, regions)
 
     painting = paint and flavor in ("prusa", "bambu") and regions is not None
     if painting and regions.count > MAX_PAINTED_EXTRUDERS:
+        # Continuous colouring - a gradient, Coulombic, hydrophobicity -
+        # has more colours than painting can hold. Splitting into one part
+        # per colour instead would leave open edges between them, so similar
+        # colours are merged until they fit, and the model stays one closed,
+        # painted mesh.
         from . import log
-        # A count this high almost always means continuous colouring, which a
-        # filament printer cannot reproduce at all - so name the mode that can
-        # before explaining the filament fallback.
-        fallback = (
-            "the parts per %s have meanwhile been written without colour" % parts
-            if parts else
-            "the model has meanwhile been split into separate parts, which "
-            "leaves open edges where they meet")
+        too_many = regions.count
+        regions = color_module.build_regions(
+            geometry, max_colors=MAX_PAINTED_EXTRUDERS)
+        geometry = _sort_by_region(geometry, regions)
         log.warn(
             session,
-            "%d colors is far more than the %d a filament printer can paint. "
-            "For a continuously coloured model &ndash; %s, hydrophobicity, "
-            "B-factor &ndash; use %s, which keeps every colour for a "
-            "full-colour printer. To print it on filament instead, reduce the "
-            "colours with %s; %s."
-            % (regions.count, MAX_PAINTED_EXTRUDERS,
-               log.cmd_link("help mlp", "mlp"),
+            "%d colors are more than a filament printer can take, so similar "
+            "colors were merged into %d. To keep every shade, use %s for a "
+            "full-color printer. Most printers have fewer than %d filaments: "
+            "set %s to yours, or the extra colors print with filament 1."
+            % (too_many, regions.count,
                log.help_link("flavors", "flavor fullcolor"),
-               log.help_link(text="maxColors %d" % MAX_PAINTED_EXTRUDERS),
-               fallback),
+               MAX_PAINTED_EXTRUDERS,
+               log.help_link(text="maxColors")),
             html=True)
-        painting = False
     elif parts and not paint and regions is not None:
         # parts carry colour only as painting; there is no per-colour split
         # inside a part to fall back on
@@ -152,6 +173,7 @@ def write_3mf(session, path, models=None, scale=None, size=None, check=True,
                           "without colour. Leave paint on to keep the colours "
                           "inside each part." % parts)
 
+    progress.step("writing the file")
     if parts:
         model_xml, extra = _parts_package(session, geometry, regions, flavor,
                                           painting)
@@ -191,7 +213,8 @@ def smoothness_target(smoothness):
     return float(smoothness)
 
 
-def _smooth(session, models, geometry, before, used_scale, target, parts=None):
+def _smooth(session, models, geometry, before, used_scale, target, parts=None,
+            progress=None):
     """Re-collect the scene finer when its flats would show in the print.
 
     Says what it is about to change before doing it, since it makes the file
@@ -199,6 +222,8 @@ def _smooth(session, models, geometry, before, used_scale, target, parts=None):
     """
     from . import log, scene, smoothness
     depths = smoothness.measure(geometry)
+    if progress is not None:
+        progress.tick()
     p = smoothness.plan(session, depths, target)
     if not p.needed:
         return geometry, before, depths
@@ -217,9 +242,14 @@ def _smooth(session, models, geometry, before, used_scale, target, parts=None):
            log.help_link("smoothness", "smoothness off")),
         html=True)
 
+    if progress is not None:
+        progress.step("smoothing")
     with smoothness.Applied(session, p):
         finer = scene.collect_geometry(session, models, parts=parts)
     before = finer.triangle_count
+    if progress is not None:
+        progress.size(before)
+        progress.step("smoothing")
     geometry = scene.weld_vertices(finer)
     geometry, _ = scene.place_for_printing(geometry, scale=used_scale)
     return geometry, before, smoothness.measure(geometry)
@@ -302,11 +332,19 @@ def _region_ranges(regions):
     return ranges
 
 
-def _write_package(path, model_xml, extra_files=None):
+def _write_package(path, model_xml, extra_files=None, chunk=1 << 22):
+    from .progress import tick
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("[Content_Types].xml", CONTENT_TYPES)
         z.writestr("_rels/.rels", RELS)
-        z.writestr("3D/3dmodel.model", model_xml)
+        # compressed a piece at a time, so the window stays responsive: a
+        # big model takes seconds to deflate
+        data = model_xml.encode("utf-8") if isinstance(model_xml, str)             else model_xml
+        with z.open("3D/3dmodel.model", "w",
+                    force_zip64=len(data) >= zipfile.ZIP64_LIMIT) as f:
+            for start in range(0, len(data), chunk):
+                f.write(data[start:start + chunk])
+                tick()
         for name, data in (extra_files or {}).items():
             z.writestr(name, data)
 
@@ -350,7 +388,7 @@ def _fullcolor_package(session, geometry, colors=True):
     flat regions. Written with the Materials extension colorgroup, which is
     the standard place for vertex colour in 3MF.
     """
-    from numpy import savetxt, column_stack, unique
+    from numpy import column_stack
 
     vertex_colors = geometry.vertex_colors if colors else None
     out = io.StringIO()
@@ -359,8 +397,8 @@ def _fullcolor_package(session, geometry, colors=True):
 
     color_index = None
     if vertex_colors is not None and len(vertex_colors):
-        palette, color_index = unique(vertex_colors[:, :3], axis=0,
-                                      return_inverse=True)
+        palette, color_index = unique_rows(vertex_colors[:, :3],
+                                           return_inverse=True)
         color_index = color_index.ravel()
         out.write('  <m:colorgroup id="%d">\n' % COLORGROUP_ID)
         for rgb in palette:
@@ -384,8 +422,8 @@ def _fullcolor_package(session, geometry, colors=True):
     else:
         rows = column_stack((geometry.triangles,
                              color_index[geometry.triangles]))
-        savetxt(out, rows,
-                fmt='     <triangle v1="%d" v2="%d" v3="%d" '
+        _write_rows(out, rows,
+                    '     <triangle v1="%d" v2="%d" v3="%d" '
                     'pid="' + str(COLORGROUP_ID) + '" p1="%d" p2="%d" p3="%d"/>')
     _close_mesh_object(out)
     _write_build(out)
@@ -394,7 +432,6 @@ def _fullcolor_package(session, geometry, colors=True):
 
 def _report_fullcolor(session, path, geometry, used_scale, before, colors):
     import os
-    from numpy import unique
     low, high = geometry.bounds()
     span = high - low
     session.logger.info(
@@ -407,7 +444,7 @@ def _report_fullcolor(session, path, geometry, used_scale, before, colors):
            else ", %d degenerate or doubled triangles removed"
                 % (before - geometry.triangle_count)))
     if colors and geometry.vertex_colors is not None:
-        distinct = len(unique(geometry.vertex_colors[:, :3], axis=0))
+        distinct = len(unique_rows(geometry.vertex_colors[:, :3]))
         session.logger.info(
             "Full colour: %d distinct vertex colours written, interpolated "
             "across each triangle. For full-colour printers (inkjet, binder "
@@ -512,26 +549,31 @@ def _report_parts(session, geometry, parts):
     session.logger.info("%d part%s, one per %s, kept in place: %s"
                         % (len(listed), "" if len(listed) == 1 else "s",
                            parts, ", ".join(listed)))
+    from .scene import SHARED_SURFACE
+    shared = [n for n, c in zip(geometry.group_names, counts)
+              if c and SHARED_SURFACE in n]
+    if shared:
+        session.logger.info(
+            "%s: one surface covers these chains, so it is saved as one "
+            "part. For a separate surface per chain, use \"surface close\" "
+            "and then \"surface\" before saving."
+            % "; ".join(s[0].upper() + s[1:] for s in shared))
 
 
 def _write_painted_triangles(out, triangles, labels, attribute):
     """Triangles carrying a per-triangle extruder code."""
-    from numpy import savetxt
-    rows = triangles
-    codes = [MMU_CODES[min(int(label) + 1, MAX_PAINTED_EXTRUDERS)]
-             for label in labels]
-    # savetxt cannot mix numbers and strings, so write one run per code;
-    # triangles are already sorted by region, so this is one call per region
-    start = 0
-    n = len(rows)
-    while start < n:
-        end = start + 1
-        while end < n and codes[end] == codes[start]:
-            end += 1
-        savetxt(out, rows[start:end],
-                fmt='     <triangle v1="%d" v2="%d" v3="%d" '
-                    + attribute + '="' + codes[start] + '"/>')
-        start = end
+    from numpy import asarray, concatenate, flatnonzero, minimum
+    n = len(triangles)
+    if n == 0:
+        return
+    code = minimum(asarray(labels, dtype=int) + 1, MAX_PAINTED_EXTRUDERS)
+    # one run of rows per code; triangles are already sorted by region, so
+    # this is one run per region
+    starts = concatenate(([0], flatnonzero(code[1:] != code[:-1]) + 1, [n]))
+    for start, end in zip(starts[:-1], starts[1:]):
+        _write_rows(out, triangles[start:end],
+                    '     <triangle v1="%d" v2="%d" v3="%d" '
+                    + attribute + '="' + MMU_CODES[int(code[start])] + '"/>')
 
 
 # ------------------------------------------------------------ prusa flavour
@@ -678,18 +720,32 @@ def _submesh(geometry, first, last):
 # ------------------------------------------------------------------ output
 
 def _write_vertices(out, vertices):
-    from numpy import savetxt
-    savetxt(out, vertices, fmt='     <vertex x="%.4f" y="%.4f" z="%.4f"/>')
+    _write_rows(out, vertices, '     <vertex x="%.4f" y="%.4f" z="%.4f"/>')
 
 
 def _write_triangles(out, triangles, labels=None):
-    from numpy import column_stack, savetxt
+    from numpy import column_stack
     if labels is None:
-        savetxt(out, triangles, fmt='     <triangle v1="%d" v2="%d" v3="%d"/>')
+        _write_rows(out, triangles, '     <triangle v1="%d" v2="%d" v3="%d"/>')
     else:
         rows = column_stack((triangles, labels))
-        savetxt(out, rows, fmt='     <triangle v1="%d" v2="%d" v3="%d" '
+        _write_rows(out, rows, '     <triangle v1="%d" v2="%d" v3="%d" '
                                'pid="' + str(COLORGROUP_ID) + '" p1="%d"/>')
+
+
+def _write_rows(out, rows, fmt, chunk=65536):
+    """Write one line per row of a 2-D array, as numpy.savetxt would.
+
+    savetxt formats each row with a separate Python call, which on a
+    multi-million-triangle mesh took longer than everything else in writing
+    the file; here a block of rows is one string operation.
+    """
+    from .progress import tick
+    line = fmt + "\n"
+    for i in range(0, len(rows), chunk):
+        block = rows[i:i + chunk]
+        out.write((line * len(block)) % tuple(block.ravel().tolist()))
+        tick()
 
 
 def _scene_name(session):

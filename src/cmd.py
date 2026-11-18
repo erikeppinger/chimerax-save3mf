@@ -1,5 +1,5 @@
 # vim: set expandtab shiftwidth=4 softtabstop=4:
-"""The '3mf palette' command: see what colour parts an export would produce,
+"""The '3mf palette' command: see what colours an export would produce,
 and what merging them down would cost, before writing any file.
 """
 
@@ -176,7 +176,7 @@ palette_desc = CmdDesc(
              ('size', FloatArg), ('scale', FloatArg),
              ('layer_height', FloatArg), ('tools', PositiveIntArg),
              ('smoothness', Or(EnumOf(('off',)), FloatArg))],
-    synopsis="Preview the color parts a 3MF export would produce",
+    synopsis="Preview the colors a 3MF export would produce, and what they cost",
 )
 
 

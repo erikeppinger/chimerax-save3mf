@@ -55,8 +55,8 @@ w.smooth_value.setValue(0.05)
 w.parts.setCurrentIndex(1)
 record("+ one part per chain")
 w.slicer.setCurrentIndex(2)
-record("+ Other: parts not offered")
-parts_offered_for_other = w.parts.isEnabled()
+record("+ full color: parts not offered")
+parts_offered_for_fullcolor = w.parts.isEnabled()
 w.slicer.setCurrentIndex(1)
 w.parts.setCurrentIndex(2)
 record("Bambu, part per model")
@@ -74,8 +74,8 @@ print("-" * 60)
 for label, args in cases:
     print("  %-26s save x.3mf %s" % (label + ":", args))
 print("-" * 60)
-print("Parts choice enabled with slicer 'Other': %s (expected False)"
-      % parts_offered_for_other)
+print("Parts choice enabled for full color: %s (expected False)"
+      % parts_offered_for_fullcolor)
 
 os.makedirs(OUT, exist_ok=True)
 png = os.path.join(OUT, "save_options.png")

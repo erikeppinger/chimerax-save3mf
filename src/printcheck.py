@@ -29,9 +29,16 @@ removal - is the job of the NIH 3D print presets bundle.
 
 from numpy import (
     abs as np_abs, arange, argsort, bincount, concatenate, cross, einsum,
-    empty, floor, int64, int8, lexsort, maximum, ones, repeat, sort, sqrt,
-    unique, zeros,
+    empty, flatnonzero, floor, full, int64, int8, lexsort, maximum, ones,
+    repeat, searchsorted, sort, sqrt, unique, zeros,
 )
+
+try:
+    from .progress import tick
+    from .rows import unique_rows
+except ImportError:     # loaded as a plain module by tests/test_bodies.py
+    from progress import tick
+    from rows import unique_rows
 
 # a 0.4 mm nozzle bridges gaps of roughly this size, so surfaces this close
 # fuse in the print
@@ -187,8 +194,10 @@ def analyze(geometry, fuse_mm=FUSE_MM):
     report.size_mm = tuple(float(x) for x in (high - low))
 
     _check_edges(t, report)
+    tick()
 
     labels = _triangle_components(t)
+    tick()
     if labels is None:
         report.analysed = False
         return report
@@ -199,13 +208,17 @@ def analyze(geometry, fuse_mm=FUSE_MM):
         return report
 
     report.open_shells = _count_open_shells(t, labels, n_shells)
+    tick()
 
     volumes = _shell_volumes(v, t, labels, n_shells)      # signed
+    tick()
     cavity = volumes < 0
     report.cavity_count = int(cavity.sum())
 
     bodies = _fuse_shells(v, t, labels, n_shells, fuse_mm)
+    tick()
     _describe_bodies(v, t, labels, bodies, volumes, cavity, report)
+    tick()
     _find_enclosed(v, t, labels, volumes, cavity, report)
     return report
 
@@ -235,55 +248,87 @@ def _find_enclosed(vertices, triangles, labels, volumes, cavity, report):
     if not containers:
         return
 
-    lows, highs, tris = {}, {}, {}
-    for s in range(n_shells):
-        t = triangles[labels == s]
-        if len(t) == 0:
-            continue
-        pts = vertices[unique(t)]
-        lows[s], highs[s] = pts.min(axis=0), pts.max(axis=0)
-        tris[s] = t
+    groups = _ShellGroups(vertices, triangles, labels, n_shells)
+    containers = [big for big in containers if groups.present[big]]
+    if not containers:
+        return
+
+    # each surface is tested against the first container whose bounding box
+    # holds it, in surface order
+    lows, highs = groups.lows, groups.highs
+    candidate = groups.present & ~cavity
+    candidate[containers] = False
+    first = full(n_shells, -1, dtype=int64)
+    for big in reversed(containers):
+        inside_box = (candidate & (lows >= lows[big]).all(axis=1)
+                      & (highs <= highs[big]).all(axis=1))
+        first[inside_box] = big
 
     counts = bincount(labels, minlength=n_shells)
     enclosed = 0
     enclosed_triangles = 0
-    tested = 0
-    for s in range(n_shells):
-        if s in containers or s not in tris or cavity[s]:
-            continue
-        for big in containers:
-            if big not in tris:
-                continue
-            if not ((lows[s] >= lows[big]).all() and (highs[s] <= highs[big]).all()):
-                continue
-            tested += 1
-            if tested > MAX_ENCLOSURE_TESTS:
-                report.enclosed_partial = True
-                break
-            if _all_points_inside(vertices, tris[s], tris[big]):
-                enclosed += 1
-                enclosed_triangles += int(counts[s])
+    outer = {}
+    for tested, s in enumerate(flatnonzero(first >= 0)):
+        if tested >= MAX_ENCLOSURE_TESTS:
+            report.enclosed_partial = True
             break
-        if tested > MAX_ENCLOSURE_TESTS:
-            break
+        big = int(first[s])
+        if big not in outer:
+            outer[big] = _ray_mesh(vertices, groups.triangles_of(big))
+        if _all_points_inside(vertices, groups.triangles_of(s), outer[big]):
+            enclosed += 1
+            enclosed_triangles += int(counts[s])
 
     report.enclosed_shells = enclosed
     report.enclosed_triangles = enclosed_triangles
 
 
-def _all_points_inside(vertices, tris_inner, tris_outer):
-    """True only if every sampled point of the inner surface is inside."""
+class _ShellGroups:
+    """The triangles of every surface, found with one sort.
+
+    Picking each surface's triangles with a mask costs a pass over the whole
+    mesh per surface, which a stick model - thousands of surfaces, millions
+    of triangles - turned into minutes. Sorted once, each surface is a slice.
+    """
+
+    def __init__(self, vertices, triangles, labels, n):
+        from numpy import maximum as npmax, minimum as npmin, nan
+        order = argsort(labels, kind="stable")
+        self.sorted = triangles[order]
+        self.bounds = searchsorted(labels[order], arange(n + 1))
+        self.present = self.bounds[1:] > self.bounds[:-1]
+        a = vertices[self.sorted[:, 0]]
+        b = vertices[self.sorted[:, 1]]
+        c = vertices[self.sorted[:, 2]]
+        self.lows = full((n, 3), nan)
+        self.highs = full((n, 3), nan)
+        starts = self.bounds[:-1][self.present]
+        if len(starts):
+            self.lows[self.present] = npmin.reduceat(
+                npmin(npmin(a, b), c), starts, axis=0)
+            self.highs[self.present] = npmax.reduceat(
+                npmax(npmax(a, b), c), starts, axis=0)
+
+    def triangles_of(self, s):
+        return self.sorted[self.bounds[s]:self.bounds[s + 1]]
+
+
+def _ray_mesh(vertices, triangles):
+    """A surface prepared for _point_inside: corners and bounding boxes."""
     from numpy import maximum as npmax, minimum as npmin
+    a = vertices[triangles[:, 0]]
+    b = vertices[triangles[:, 1]]
+    c = vertices[triangles[:, 2]]
+    return a, b, c, npmin(npmin(a, b), c), npmax(npmax(a, b), c)
+
+
+def _all_points_inside(vertices, tris_inner, outer):
+    """True only if every sampled point of the inner surface is inside."""
     pts = vertices[unique(tris_inner)]
     step = max(1, len(pts) // ENCLOSURE_SAMPLES)
     sample = pts[::step][:ENCLOSURE_SAMPLES]
-    a = vertices[tris_outer[:, 0]]
-    b = vertices[tris_outer[:, 1]]
-    c = vertices[tris_outer[:, 2]]
-    lo = npmin(npmin(a, b), c)
-    hi = npmax(npmax(a, b), c)
     for p in sample:
-        if not _point_inside(p, a, b, c, lo, hi):
+        if not _point_inside(p, *outer):
             return False
     return True
 
@@ -325,24 +370,21 @@ def _thinnest_body(vertices, triangles, labels, bodies, solid):
     measured, it would report a void as a feature too thin to print.
     """
     n_bodies = int(bodies.max()) + 1
-    body_of_triangle = bodies[labels]
     solid_triangle = solid[labels]
-    thinnest = None
-    for b in range(n_bodies):
-        tris = triangles[(body_of_triangle == b) & solid_triangle]
-        if len(tris) == 0:
-            continue
-        pts = vertices[unique(tris)]
-        extent = float((pts.max(axis=0) - pts.min(axis=0)).min())
-        thinnest = extent if thinnest is None else min(thinnest, extent)
-    return thinnest
+    groups = _ShellGroups(vertices, triangles[solid_triangle],
+                          bodies[labels][solid_triangle], n_bodies)
+    if not groups.present.any():
+        return None
+    present = groups.present
+    extent = (groups.highs[present] - groups.lows[present]).min(axis=1)
+    return float(extent.min())
 
 
 # ------------------------------------------------------------- mesh topology
 
 def _check_edges(triangles, report):
     edges = _edge_array(triangles)
-    _, counts = unique(edges, axis=0, return_counts=True)
+    _, counts = unique_rows(edges, return_counts=True)
     report.open_edges = int((counts == 1).sum())
     report.nonmanifold_edges = int((counts > 2).sum())
 
@@ -365,7 +407,7 @@ def _triangle_components(triangles):
 
     nt = len(triangles)
     edges = _edge_array(triangles)
-    _, edge_ids = unique(edges, axis=0, return_inverse=True)
+    _, edge_ids = unique_rows(edges, return_inverse=True)
     edge_ids = edge_ids.ravel()
 
     tri_of_edge = repeat(arange(nt), 3)
@@ -420,10 +462,13 @@ def _surface_samples(vertices, triangles, labels, tau, budget=SAMPLE_BUDGET):
     """
     from numpy import ceil, clip, vstack
 
+    # a vertex no triangle uses belongs to no surface, so it is not sampled;
+    # its entry would otherwise be whatever the memory held
     vertex_shell = empty(len(vertices), dtype=int64)
     vertex_shell[triangles.ravel()] = repeat(labels, 3)
-    point_sets = [vertices]
-    tag_sets = [vertex_shell]
+    used = unique(triangles.ravel())
+    point_sets = [vertices[used]]
+    tag_sets = [vertex_shell[used]]
 
     a = vertices[triangles[:, 0]]
     b = vertices[triangles[:, 1]]
@@ -494,6 +539,7 @@ def _fuse_shells(vertices, triangles, labels, n_shells, fuse_mm):
 
     tau = fuse_mm
     points, tags = _surface_samples(vertices, triangles, labels, tau)
+    tick()
 
     rows, cols = [], []
     for offset in (0.0, 0.5):
@@ -504,11 +550,13 @@ def _fuse_shells(vertices, triangles, labels, n_shells, fuse_mm):
         link = (k[1:] == k[:-1]) & (s[1:] != s[:-1])
         rows.append(s[:-1][link])
         cols.append(s[1:][link])
+        tick()
 
     r, c = concatenate(rows), concatenate(cols)
     graph = coo_matrix((ones(len(r), dtype=int8), (r, c)),
                        shape=(n_shells, n_shells))
     _, bodies = connected_components(graph, directed=False)
+    tick()
     return _fuse_interpenetrating(vertices, triangles, labels, bodies,
                                   n_shells)
 
@@ -534,31 +582,29 @@ def _fuse_interpenetrating(vertices, triangles, labels, bodies, n_shells):
     if len(unique(bodies)) < 2:
         return bodies
 
-    lows, highs, meshes = {}, {}, {}
-    for s in range(n_shells):
-        tris = triangles[labels == s]
-        if len(tris) == 0:
-            continue
-        pts = vertices[unique(tris)]
-        lows[s], highs[s] = pts.min(axis=0), pts.max(axis=0)
-        meshes[s] = tris
+    groups = _ShellGroups(vertices, triangles, labels, n_shells)
+    lows, highs = groups.lows, groups.highs
 
+    # pairs in different bodies whose bounding boxes overlap, in surface
+    # order, as many as will be tested
     candidates = []
-    shells_present = sorted(meshes)
+    shells_present = flatnonzero(groups.present)
     for i, a in enumerate(shells_present):
-        for b in shells_present[i + 1:]:
-            if bodies[a] == bodies[b]:
-                continue
-            if (lows[a] <= highs[b]).all() and (lows[b] <= highs[a]).all():
-                candidates.append((a, b))
+        rest = shells_present[i + 1:]
+        near = ((bodies[rest] != bodies[a])
+                & (lows[a] <= highs[rest]).all(axis=1)
+                & (lows[rest] <= highs[a]).all(axis=1))
+        candidates.extend((int(a), int(b)) for b in rest[near])
+        if len(candidates) >= MAX_OVERLAP_TESTS:
+            break
     if not candidates:
         return bodies
-    if len(candidates) > MAX_OVERLAP_TESTS:
-        candidates = candidates[:MAX_OVERLAP_TESTS]
+    candidates = candidates[:MAX_OVERLAP_TESTS]
 
     rows, cols = [], []
     for a, b in candidates:
-        if _shells_interpenetrate(vertices, meshes[a], meshes[b]):
+        if _shells_interpenetrate(vertices, groups.triangles_of(a),
+                                  groups.triangles_of(b)):
             rows.append(a)
             cols.append(b)
     if not rows:
@@ -566,17 +612,10 @@ def _fuse_interpenetrating(vertices, triangles, labels, bodies, n_shells):
 
     graph = coo_matrix((ones(len(rows), dtype=int8), (rows, cols)),
                        shape=(n_shells, n_shells))
-    # keep what proximity already joined
-    pr, pc = [], []
-    for s in range(1, n_shells):
-        if bodies[s] == bodies[s - 1]:
-            pr.append(s - 1)
-            pc.append(s)
-    for body in unique(bodies):
-        members = [s for s in range(n_shells) if bodies[s] == body]
-        for x, y in zip(members, members[1:]):
-            pr.append(x)
-            pc.append(y)
+    # keep what proximity already joined: chain the members of each body
+    by_body = argsort(bodies, kind="stable")
+    same = bodies[by_body][1:] == bodies[by_body][:-1]
+    pr, pc = by_body[:-1][same], by_body[1:][same]
     graph = graph + coo_matrix(
         (ones(len(pr), dtype=int8), (pr, pc)), shape=(n_shells, n_shells))
     _, merged = connected_components(graph, directed=False)

@@ -12,6 +12,15 @@ from numpy import (
     array, concatenate, empty, float32, int32, uint8, uint32, zeros,
 )
 
+# a part holding one molecular surface drawn around several chains: its group
+# key carries this prefix before the chain IDs, and its name starts with
+# SHARED_SURFACE (see _Groups._keep_shared_whole)
+SHARED_SURFACE_KEY = "surface:"
+SHARED_SURFACE = "surface of chains"
+
+# vertices closer than this (scene units, Angstrom) are one point
+WELD_TOLERANCE = 1e-4
+
 
 class SceneGeometry:
     """Triangles of the displayed scene, with a colour for each triangle.
@@ -119,8 +128,9 @@ class _Groups:
 
     Wherever ChimeraX knows what a triangle was drawn for, that is used:
 
-    molecular surface  the atom behind each vertex, so one surface enclosing
-                       several chains is split exactly
+    molecular surface  the atom behind each vertex; but a piece of surface
+                       drawn around several chains stays whole, as a part
+                       of its own, since cut per chain it would be open
     ribbon             the residue each stretch of the ribbon was drawn for
     atoms, bonds,      one sphere or cylinder per instance; each goes, whole,
     pseudobonds        to the chain of the nearest drawn atom, so nothing is
@@ -169,10 +179,13 @@ class _Groups:
             v2a = d.vertex_to_atom_map() if instances == 1 else None
             if v2a is not None and len(v2a) == len(vertices):
                 per_atom = self._chain_groups(structure, d.atoms.chain_ids)
-                return per_atom[v2a][triangles[:, 0]]
-            # no atom map (recoloured with sharp edges): the surface's own
-            # atoms, whether or not they are drawn
-            return by_triangle(("surface", id(d)), lambda: d.atoms)
+                groups = per_atom[v2a][triangles[:, 0]]
+            else:
+                # no atom map (recoloured with sharp edges): the surface's
+                # own atoms, whether or not they are drawn
+                groups = by_triangle(("surface", id(d)), lambda: d.atoms)
+            return self._keep_shared_whole(structure, vertices, triangles,
+                                           groups)
 
         if instances == 1:
             groups = self._ribbon_groups(d, structure, vertices, triangles)
@@ -197,18 +210,27 @@ class _Groups:
         from collections import Counter
         from numpy import unique, zeros
         used = set(unique(triangle_groups).tolist())
+        def shared(chain):
+            return chain is not None and chain.startswith(SHARED_SURFACE_KEY)
+
+        # a model's chains first, then its surfaces around several chains
         keys = sorted((k for k, i in self._keys.items() if i in used),
-                      key=lambda k: (_model_id(k[0]), k[1] or ""))
+                      key=lambda k: (_model_id(k[0]), shared(k[1]),
+                                     k[1] or ""))
         chain_owners = {owner for owner, chain in keys if chain is not None}
         plain = len(chain_owners) == 1 and all(c is not None for _, c in keys)
         names = []
         for owner, chain in keys:
             if chain is None:
-                names.append(owner.name)
-            elif plain:
-                names.append("chain %s" % chain)
+                name = owner.name
+            elif shared(chain):
+                name = "%s %s" % (SHARED_SURFACE, ", ".join(
+                    chain[len(SHARED_SURFACE_KEY):].split(",")))
             else:
-                names.append("%s chain %s" % (owner.name, chain))
+                name = "chain %s" % chain
+            if chain is not None and not plain:
+                name = "%s %s" % (owner.name, name)
+            names.append(name)
         repeated = {n for n, count in Counter(names).items() if count > 1}
         for i, (owner, _) in enumerate(keys):
             if names[i] in repeated:
@@ -224,6 +246,51 @@ class _Groups:
         if key not in self._keys:
             self._keys[key] = len(self._keys)
         return self._keys[key]
+
+    def _keep_shared_whole(self, structure, vertices, triangles, groups):
+        """Keep each connected piece of a molecular surface in one part.
+
+        `surface enclose` (and the NIH surface presets, which use it) draws
+        one surface around several chains. Cut along the chain borders, each
+        piece would have an open seam where it touched the next chain, and
+        no closed solid to print. A piece that touches one chain goes to that
+        chain; a piece that spans several becomes a part of its own, named
+        after them (SHARED_SURFACE).
+        """
+        from numpy import int64, ones, unique
+        from scipy.sparse import coo_matrix
+        from scipy.sparse.csgraph import connected_components
+        if len(triangles) == 0 or len(unique(groups)) < 2:
+            return groups
+        from scipy.spatial import cKDTree
+        n = len(vertices)
+        # ChimeraX stores the surface as many patches that share positions,
+        # not vertices; joined here as weld_vertices joins them later
+        same_place = cKDTree(vertices).query_pairs(WELD_TOLERANCE,
+                                                   output_type="ndarray")
+        ends = concatenate([triangles[:, [0, 1]], triangles[:, [1, 2]],
+                            same_place.reshape(-1, 2).astype(triangles.dtype)])
+        graph = coo_matrix((ones(len(ends), bool), (ends[:, 0], ends[:, 1])),
+                           shape=(n, n))
+        _, piece_of_vertex = connected_components(graph, directed=False)
+        piece = piece_of_vertex[triangles[:, 0]]
+        chain_of = {i: key[1] for key, i in self._keys.items()}
+        pairs = unique(piece.astype(int64) * len(self._keys) + groups)
+        pieces, chain_counts = unique(pairs // len(self._keys),
+                                      return_counts=True)
+        spanning = pieces[chain_counts > 1]
+        if len(spanning) == 0:
+            return groups
+        # all such pieces of one surface go together: besides the outside
+        # there are cavities at the chain interfaces, which are empty space
+        # inside the same solid and mean nothing as parts of their own
+        from numpy import isin
+        mine = isin(piece, spanning)
+        chains = sorted({chain_of[int(g)] for g in unique(groups[mine])})
+        groups = groups.copy()
+        groups[mine] = self._index(structure,
+                                   SHARED_SURFACE_KEY + ",".join(chains))
+        return groups
 
     def _chain_groups(self, structure, chain_ids):
         """Group index for each of the given chain IDs of one structure."""
@@ -414,7 +481,7 @@ def _combine(pieces, sources):
     )
 
 
-def weld_vertices(geometry, tolerance=1e-4):
+def weld_vertices(geometry, tolerance=WELD_TOLERANCE):
     """Merge vertices that land on the same point, so the mesh is connected.
 
     Instanced geometry and separate drawings produce many coincident vertices;
@@ -434,7 +501,9 @@ def weld_vertices(geometry, tolerance=1e-4):
     if len(v) == 0:
         return geometry
     from scipy.spatial import cKDTree
+    from .progress import tick
     pairs = cKDTree(v).query_pairs(tolerance, output_type="ndarray")
+    tick()
     if len(pairs):
         from scipy.sparse import coo_matrix
         from scipy.sparse.csgraph import connected_components
@@ -452,12 +521,34 @@ def weld_vertices(geometry, tolerance=1e-4):
     keep = ((new_triangles[:, 0] != new_triangles[:, 1]) &
             (new_triangles[:, 1] != new_triangles[:, 2]) &
             (new_triangles[:, 0] != new_triangles[:, 2]))
+    tick()
     keep &= ~_internal_walls(new_triangles, keep)
+    tick()
     vcolors = geometry.vertex_colors
     welded = geometry.with_arrays(new_vertices.astype(float32),
                                   new_triangles[keep], keep,
                                   None if vcolors is None else vcolors[first])
-    return _cap_round_holes(welded)
+    capped = _cap_round_holes(welded)
+    tick()
+    return _drop_unused_vertices(capped)
+
+
+def _drop_unused_vertices(geometry):
+    """Remove vertices no triangle refers to.
+
+    Dropping internal walls leaves some behind (the centre of each removed
+    pseudobond cap); they would go into the file as stray points and count
+    in the bounds.
+    """
+    from numpy import int32, unique
+    t = geometry.triangles
+    used, inverse = unique(t.ravel(), return_inverse=True)
+    if len(t) == 0 or len(used) == len(geometry.vertices):
+        return geometry
+    vcolors = geometry.vertex_colors
+    return geometry.with_arrays(
+        geometry.vertices[used], inverse.reshape(t.shape).astype(int32),
+        None, None if vcolors is None else vcolors[used])
 
 
 def _internal_walls(triangles, candidates):
@@ -539,6 +630,8 @@ def _cap_round_holes(geometry, roundness=0.02):
     open_ = counts[inverse.ravel()] == 1
     if not open_.any():
         return geometry
+    from .progress import tick
+    tick()
 
     # follow each loop through its directed open edges
     nxt = {}
@@ -557,6 +650,7 @@ def _cap_round_holes(geometry, roundness=0.02):
     for start in list(nxt):
         if start in done or start in bad:
             continue
+        tick()
         pp = start[0]
         loop, node, ok = [], start, True
         while node not in done:

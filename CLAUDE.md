@@ -24,6 +24,10 @@ does not run. Use ChimeraX's interpreter for every script.
 # just the export suite; writes tests/out/results.json
 & "C:\Program Files\ChimeraX 1.12\bin\ChimeraX-console.exe" --nogui --exit --silent --script tests\test_export.py
 
+# stress run: every NIH printable preset and hand-built user scenes, with
+# garbage-filled numpy.empty; opens a ChimeraX window on display 1 (~1 h)
+.\tests\run_scenes.ps1                # -Only "1ubq" for a subset
+
 # build a wheel into dist/
 & "C:\Program Files\ChimeraX 1.12\bin\ChimeraX-console.exe" --nogui --exit --silent --cmd "devel build . exit true"
 
@@ -83,19 +87,22 @@ writes colour as per-triangle painting on one watertight mesh
 (`_painted_package`), which is what slicers' own paint tools produce:
 `slic3rpe:mmu_segmentation` for PrusaSlicer, `paint_color` for Bambu/Orca,
 identical encoding. Splitting geometry into per-colour parts also works
-(`_prusa_package`, `_bambu_package`, reached by `paint false` or automatically
-above 15 colours) but leaves open edges between patches and a repair warning on
-each one.
+(`_prusa_package`, `_bambu_package`, reached by `paint false`) but leaves open
+edges between patches and a repair warning on each one. Above 15 colours,
+which is all painting can hold, similar colours are merged into 15 (until
+0.2.5 the export split instead, and gradient presets came out open).
 
 `flavor fullcolor` (`_fullcolor_package`) instead writes one mesh with a colour
 per vertex, for full-colour printers and 3MF viewers.
 
 `parts chain|model` (`_parts_package`) splits by chain or model instead of by
 colour, in the same two layouts, and keeps the painting inside each part.
-Surfaces are assigned exactly (`vertex_to_atom_map`); atoms, bonds and ribbons
-are one drawing for all chains: ribbons are divided by the residue ranges
-ChimeraX records, and each sphere or cylinder goes whole to the nearest drawn atom's
-chain.
+Surfaces are assigned exactly (`vertex_to_atom_map`), except that a surface
+drawn around several chains (`surface enclose`, the NIH surface presets) stays
+whole as a part named "surface of chains A, B": cut per chain it would be open
+along every seam. Atoms, bonds and ribbons are one drawing for all chains:
+ribbons are divided by the residue ranges ChimeraX records, and each sphere or
+cylinder goes whole to the nearest drawn atom's chain.
 
 ### Facts established by experiment, not documentation
 
@@ -135,10 +142,27 @@ post without re-running the probes.
   Dropbox ignore flag on `build\` cannot help, since the folder (and the flag)
   is deleted each time. Rerun; `tests/run_all.ps1` retries up to three times.
   A real build error fails every attempt.
+- **A long loop must call `progress.tick()`.** An export runs on the GUI
+  thread, and Windows greys out a window that has not answered for about
+  5 s as "Not responding", status line and all. `tick()` re-shows the
+  status at most twice a second, which runs Qt's event loop without user
+  input; outside an export it does nothing. On 1a3n sticks the longest
+  gap is now ~4 s, a single `cKDTree.query_pairs` call.
 - **Flush graphics before reading drawings.** ChimeraX commands mark the scene
   changed but rebuild drawings on the next frame, and nothing draws a frame in
   `--nogui`. `scene._flush_pending_graphics` exists because an export right
   after `hide atoms` otherwise contained the hidden atoms.
+- **A molecular surface is many patches, not one mesh.** ChimeraX stores it
+  as thousands of pieces that share positions but not vertex indices
+  (1a3n enclosed: 336,250 vertices at 235,972 places). Anything that needs
+  its connectivity before `weld_vertices` must join coincident points itself.
+- **Never read an entry of `numpy.empty` that was not written.** It held
+  whatever memory held and usually passed: the stray-vertex crash with the
+  NIH presets (0.2.4, 0.2.5) only showed up now and then.
+  `tests/run_scenes.ps1` fills those arrays with garbage so it always shows.
+- **Placing a ChimeraX GUI window from inside its script does not stick.**
+  `run_scenes.ps1` moves it with `SetWindowPos` once it has a handle; keep it
+  on display 1 (x = -3000), the user works on the main screen.
 - **Coordinates must never go negative.** A slicer takes them literally and
   puts the model off the bed. Only a real slice catches this; round trips do
   not, because the GUI loader auto-arranges.

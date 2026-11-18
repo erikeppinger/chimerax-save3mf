@@ -15,7 +15,7 @@ from Qt.QtWidgets import (
 SLICERS = [
     ("PrusaSlicer", "prusa"),
     ("Bambu Studio / OrcaSlicer", "bambu"),
-    ("Other (geometry and colors only)", "generic"),
+    ("Full-color printer or 3MF viewer", "fullcolor"),
 ]
 
 # label, parts argument
@@ -187,7 +187,7 @@ class SaveOptionsWidget(QFrame):
         self.merge.setEnabled(splitting)
         self.merge_count.setEnabled(splitting and self.merge.isChecked())
         # full-colour output is one mesh by nature
-        self.parts.setEnabled(SLICERS[self.slicer.currentIndex()][1] != "generic")
+        self.parts.setEnabled(SLICERS[self.slicer.currentIndex()][1] != "fullcolor")
 
     def _preview(self):
         from chimerax.core.commands import run
@@ -220,7 +220,7 @@ class SaveOptionsWidget(QFrame):
             args.append("flavor %s" % flavor)
 
         parts = PARTS[self.parts.currentIndex()][1]
-        if parts and flavor != "generic":
+        if parts and flavor != "fullcolor":
             args.append("parts %s" % parts)
 
         if not self.check.isChecked():

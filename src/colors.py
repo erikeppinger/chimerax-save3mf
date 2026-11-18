@@ -18,9 +18,11 @@ appears in the ChimeraX scene.
 """
 
 from numpy import (
-    argsort, array, bincount, cbrt, cross, dot, empty, float64, sqrt, unique,
-    where, zeros,
+    argsort, array, bincount, cbrt, cross, dot, empty, float64, sqrt, where,
+    zeros,
 )
+
+from .rows import unique_rows
 
 MAX_REGIONS_BEFORE_WARNING = 32
 
@@ -62,7 +64,7 @@ def build_regions(geometry, max_colors=None):
     tri_colors = geometry.triangle_colors[:, :3]
     areas = triangle_areas(geometry)
 
-    unique_colors, inverse = unique(tri_colors, axis=0, return_inverse=True)
+    unique_colors, inverse = unique_rows(tri_colors, return_inverse=True)
     inverse = inverse.ravel()
     distinct = len(unique_colors)
 
@@ -99,7 +101,7 @@ def preview_merges(geometry, candidates):
     """
     tri_colors = geometry.triangle_colors[:, :3]
     areas = triangle_areas(geometry)
-    unique_colors, inverse = unique(tri_colors, axis=0, return_inverse=True)
+    unique_colors, inverse = unique_rows(tri_colors, return_inverse=True)
     distinct = len(unique_colors)
     color_areas = bincount(inverse.ravel(), weights=areas, minlength=distinct)
 
@@ -117,7 +119,7 @@ def preview_merges(geometry, candidates):
 def color_index(geometry):
     """Distinct colours in the scene and which one each triangle has."""
     tri_colors = geometry.triangle_colors[:, :3]
-    unique_colors, inverse = unique(tri_colors, axis=0, return_inverse=True)
+    unique_colors, inverse = unique_rows(tri_colors, return_inverse=True)
     return unique_colors, inverse.ravel()
 
 

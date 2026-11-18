@@ -134,6 +134,9 @@ def _check_mesh(r, object_id, verts, tris, require_closed):
                   | (tris[:, 0] == tris[:, 2])).sum()
     if degenerate:
         r.fail("%s: %d degenerate triangles" % (where, degenerate))
+    unused = len(verts) - len(np.unique(tris))
+    if unused:
+        r.fail("%s: %d vertices that no triangle uses" % (where, unused))
 
     if require_closed:
         edges = np.sort(np.concatenate(

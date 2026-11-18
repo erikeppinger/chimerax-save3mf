@@ -107,7 +107,29 @@ def main():
           % ("unfused cavity is not the thinnest piece",
              report.thinnest_body_mm, "pass" if thin_ok else "FAIL"))
 
-    print("\nBODY TESTS: %d passed, %d failed" % (len(CASES) + 2 - failures,
+    # A vertex that no triangle uses belongs to no surface. The check once
+    # tagged it with whatever its unwritten array entry held, and crashed
+    # when that was garbage. Filling new arrays with garbage makes this
+    # deterministic: two boxes plus a stray vertex on a corner of
+    # the first (where it shares a voxel with surface samples), two bodies.
+    empty = printcheck.empty
+    printcheck.empty = lambda n, dtype=float: np.full(n, -4422252995058532480,
+                                                      dtype=dtype)
+    try:
+        geom = build([(0, 0, 0, 10, 10, 10), (12, 0, 0, 22, 10, 10)])
+        geom.vertices = np.vstack([geom.vertices, [[10.0, 10.0, 10.0]]])
+        report = printcheck.analyze(geom)
+        stray_ok = report.body_count == 2
+        stray_detail = "bodies %d/2" % report.body_count
+    except Exception as e:
+        stray_ok, stray_detail = False, "%s: %s" % (type(e).__name__, e)
+    finally:
+        printcheck.empty = empty
+    failures += 0 if stray_ok else 1
+    print("  %-46s %s  %s" % ("vertex no triangle uses is ignored",
+                              stray_detail, "pass" if stray_ok else "FAIL"))
+
+    print("\nBODY TESTS: %d passed, %d failed" % (len(CASES) + 3 - failures,
                                                   failures))
     return failures
 

@@ -58,7 +58,7 @@ max-session-version = 1
 
 [chimerax.command."3mf palette"]
 category = "Input/Output"
-synopsis = "Preview the color parts a 3MF export would produce"
+synopsis = "Preview the colors a 3MF export would produce, and what they cost"
 
 [chimerax.data-format."3MF"]
 category = "Generic 3D objects"

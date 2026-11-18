@@ -277,6 +277,35 @@ def test_parts_surface_without_atom_map():
           "got %s" % names)
 
 
+def test_parts_shared_surface():
+    """One surface drawn around several chains (surface enclose, as the NIH
+    surface presets do) cannot be cut per chain without leaving each piece
+    open. It stays whole as a part of its own, closed, while the cartoon is
+    still split by chain; and the remedy the log names - surface close, then
+    surface - gives one closed surface part per chain."""
+    scene("open 1a3n", "delete solvent | ligand", "hide atoms", "cartoon",
+          "surface #1 enclose #1", "color bychain")
+    for flavor in ("prusa", "bambu"):
+        path = export("t_parts_shared_%s.3mf" % flavor,
+                      "size 60 parts chain flavor %s" % flavor)
+        names = [p[0] for p in _parts(path)]
+        check("parts %s: a surface around four chains stays whole" % flavor,
+              names == ["chain A", "chain B", "chain C", "chain D",
+                        "surface of chains A, B, C, D"], "got %s" % names)
+        r = validate(path)
+        check("parts %s: the shared surface part is closed" % flavor, r.ok,
+              "; ".join(r.problems))
+
+    scene("open 1a3n", "delete solvent | ligand", "hide atoms", "hide cartoon",
+          "surface #1 enclose #1", "surface close", "surface")
+    path = export("t_parts_shared_fixed.3mf", "size 60 parts chain")
+    names = [p[0] for p in _parts(path)]
+    r = validate(path)
+    check("parts: surface close, then surface, gives a closed part per chain",
+          names == ["chain A", "chain B", "chain C", "chain D"] and r.ok,
+          "got %s; %s" % (names, "; ".join(r.problems)))
+
+
 def test_parts_bonds_between_models():
     """A distance or hydrogen bond between two models is drawn by a model of
     its own; it belongs to the atoms it joins, not in an extra part."""
@@ -449,6 +478,11 @@ def test_pseudobonds_are_closed():
         bad = [dict(u) for u in use if set(u) != {2}]
         check("hydrogen bonds, %s: every edge on exactly two triangles" % label,
               use and not bad, "edge use %s" % bad)
+        # removing the caps orphans their centre vertices; left in, they
+        # reached the printability check with no surface of their own
+        r = validate(path)
+        check("hydrogen bonds, %s: file validates" % label, r.ok,
+              "; ".join(r.problems))
 
 
 def test_colors_off():
@@ -460,13 +494,29 @@ def test_colors_off():
 
 
 def test_too_many_colors():
-    """Above 15 regions it must fall back to split parts, not emit bad codes."""
+    """Painting holds at most 15 colours. A gradient has hundreds: they are
+    merged into 15 and the model stays one closed, painted mesh, in every
+    filament layout. Splitting into a part per colour instead, as 0.2.5 did,
+    left open edges between the parts. paint false still splits, because
+    that is what it asks for."""
     scene("open 1a3n", "delete solvent", "hide atoms", "hide cartoon",
           "surface", "color byattribute bfactor palette rainbow")
-    path = export("t_many.3mf", "size 60 maxColors 20")
-    r = validate(path, expect_painted=False, expect_regions=20,
-                 require_closed=False)
-    check("20 colors: falls back to split parts", r.ok, "; ".join(r.problems))
+    for label, args in (("default", ""), ("maxColors 20", "maxColors 20"),
+                        ("bambu", "flavor bambu")):
+        path = export("t_many_%s.3mf" % label.replace(" ", "_"),
+                      "size 60 " + args)
+        r = validate(path, expect_painted=True, expect_regions=15)
+        check("many colors, %s: merged into 15, painted, closed" % label,
+              r.ok, "; ".join(r.problems))
+    names = {p[0]: len(p[2]) for p in _parts(export(
+        "t_many_parts.3mf", "size 60 parts chain flavor bambu"))}
+    check("many colors, parts chain: every part keeps painted colours",
+          names and all(n > 1 for n in names.values()), "codes per part %s"
+          % names)
+    r = validate(export("t_many_split.3mf", "size 60 maxColors 20 paint false"),
+                 expect_painted=False, expect_regions=20, require_closed=False)
+    check("many colors, paint false: still one part per colour", r.ok,
+          "; ".join(r.problems))
 
 
 def _analysed(*commands):
@@ -573,6 +623,58 @@ def test_empty_scene():
     except Exception as e:
         check("empty scene: reports a clear error",
               "Nothing to save" in str(e), str(e)[:80])
+
+
+def _status_messages(run_export):
+    """Status-line messages shown while run_export() runs."""
+    logger = session.logger                                 # noqa: F821
+    shown = []
+    real = logger.status
+
+    def record(msg, *args, **kw):
+        shown.append(msg)
+        return real(msg, *args, **kw)
+    logger.status = record
+    try:
+        run_export()
+    except Exception:
+        pass
+    finally:
+        del logger.status
+    return shown
+
+
+def test_progress():
+    """A long export says on the status line what it is doing, and clears it
+    when done, also when it fails. Above a million triangles each message
+    says how big the scene is and that ChimeraX pauses."""
+    from chimerax.save3mf import progress
+    scene("open 1ubq", "hide atoms", "show cartoon")
+    shown = _status_messages(lambda: export("t_progress.3mf"))
+    steps = " | ".join(shown)
+    check("progress: each step is shown",
+          all(("Saving 3MF: %s" % s) in steps for s in
+              ("reading the scene", "checking printability",
+               "writing the file")), steps[:300])
+    check("progress: a small scene gives no size note",
+          "million triangles" not in steps, steps[:300])
+    check("progress: the status line is cleared at the end",
+          bool(shown) and shown[-1] == "", repr(shown[-1:]))
+
+    large = progress.LARGE
+    progress.LARGE = 1
+    try:
+        shown = _status_messages(lambda: export("t_progress.3mf"))
+    finally:
+        progress.LARGE = large
+    check("progress: a large scene says its size and that ChimeraX pauses",
+          any("million triangles" in m and "pauses" in m for m in shown),
+          " | ".join(shown)[:300])
+
+    scene("open 1ubq", "hide atoms", "hide cartoon")
+    shown = _status_messages(lambda: export("t_progress_empty.3mf"))
+    check("progress: the status line is cleared after an error",
+          bool(shown) and shown[-1] == "", repr(shown[-1:]))
 
 
 def test_print_cost_model():
@@ -694,6 +796,7 @@ TESTS = [
     test_parts_spheres,
     test_parts_thick_ribbon,
     test_parts_surface_without_atom_map,
+    test_parts_shared_surface,
     test_parts_bonds_between_models,
     test_parts_per_model,
     test_parts_unpainted,
@@ -711,6 +814,7 @@ TESTS = [
     test_fullcolor,
     test_palette_command,
     test_empty_scene,
+    test_progress,
     test_print_cost_model,
     test_smoothness,
     test_smoothness_ribbons,
