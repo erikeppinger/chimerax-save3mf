@@ -1,13 +1,13 @@
 # Printing protein models
 
-A worked example from a PDB entry to a multi-colour print, followed by
-practical tips for each kind of model and the slicer settings that act on files
-from [Save3MF](../README.md). Inside ChimeraX this page is part of the help
-(`help 3mf`, then *Printing protein models*), where every command in the
-example is a link that runs it.
+This guide takes one protein from the PDB to a multi-colour print, step by
+step, and then collects tips for each kind of model and the slicer settings
+that matter for [Save3MF](../README.md) files. In ChimeraX it is part of the
+help (`help 3mf`, then *Printing protein models*), where you can click every
+command to run it.
 
-**Have a tip that worked for you?** This page is meant to grow.
-[Contributing a tip](#contributing) says how to add one.
+**Have a tip that worked for you?** This page is meant to grow –
+[Contributing a tip](#contributing) says how.
 
 Contents: [Worked example](#example) · [Tips by representation](#tips) ·
 [Slicer settings](#slicer) · [Sources](#sources) ·
@@ -17,13 +17,16 @@ Contents: [Worked example](#example) · [Tips by representation](#tips) ·
 
 ## Worked example: ubiquitin (PDB 1ubq)
 
-The route is ChimeraX → Save3MF →
-[Support Optimizer](https://github.com/erikeppinger/support-optimizer) →
-slicer. Besides Save3MF it uses the
-[NIH 3D print presets](https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxnihpresets)
-(install from **Tools → More Tools…**), and optionally Support Optimizer, which
-runs in the browser or as a desktop app. The same steps are in the example
-script [examples/1ubq-print.cxc](../examples/1ubq-print.cxc).
+You will use three tools:
+
+- **Save3MF**, to save the model with its colours;
+- the [NIH 3D print presets](https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxnihpresets),
+  to make it printable (install from **Tools → More Tools…**);
+- optionally [Support Optimizer](https://github.com/erikeppinger/support-optimizer),
+  to find the best orientation. It runs in the browser or as a desktop app.
+
+All the steps are also in one script:
+[examples/1ubq-print.cxc](../examples/1ubq-print.cxc).
 
 ### 1. Open the structure
 
@@ -31,72 +34,70 @@ script [examples/1ubq-print.cxc](../examples/1ubq-print.cxc).
 open 1ubq
 ```
 
-A PDB ID or a local file. For an oligomer, use the biological assembly if that
-is what should be printed.
+Any PDB ID or local file works. For a protein made of several copies, open
+the biological assembly if that is what you want to print.
 
-### 2. Make it printable with an NIH preset
+### 2. Make it printable
 
 ```chimerax
 preset "nih3d" "ribbon by secondary structure (printable)"
 ```
 
-Or choose one from the **Presets** menu. The printable presets set thicknesses
-a printer can hold and add supports that hold the model together: hydrogen
-bonds drawn as thick cylinders and, where pieces need joining, struts. For
-1ubq the supports are all hydrogen bonds; a less compact structure also gets
-struts.
+You can also pick a preset from the **Presets** menu. The printable presets
+make thin parts thick enough to print and add supports that hold the model
+together: hydrogen bonds drawn as thick rods and, where needed, extra struts.
 
-The presets change the structure as well as its look. They delete the solvent,
-and the ribbon presets also delete the hydrogens. A later `show` cannot bring
-these atoms back, and a session saved afterwards no longer contains them. The
-file you opened is not changed; reopen it to get them back. If a water matters
-for the model, such as one bridging a ligand, save the session before running
-a preset.
+> **Good to know:** the presets delete the water molecules, and the ribbon
+> presets also delete the hydrogens. `show` cannot bring them back, and a
+> session saved afterwards won't have them. Your original file is not
+> changed; open it again to get them back. If a particular water matters,
+> save the session before running a preset.
 
 <a name="supports"></a>
 
 ### 3. Check the supports
 
-Most supports help, but an occasional one is badly placed for printing –
-pinning a terminus at an awkward angle, or creating an overhang that needs
-support material. Hover over a support to see which two atoms it joins, then
-remove it by naming them. In 1ubq, for example, the hydrogen bond between Met1
-N and Val17 O:
+Most supports help, but now and then one sits badly – pinning the end of the
+chain at an odd angle, say, or creating an overhang. Hover over a support to
+see which two atoms it joins, then delete it by naming them. In 1ubq, for
+example:
 
 ```chimerax
 delete pbonds /A:1@N /A:17@O
 ```
 
-For any structure, Ctrl+click the support to select it and use
-`delete pbonds sel`. To keep it in the session but leave it out of the file,
-hide it instead (`hide /A:1@N /A:17@O pbonds`); only what is displayed is
-exported. `delete pbonds` removes every pseudobond whose two ends are both in
-the specification, so a residue-level specification such as `/A:1,17` removes
-all supports between those residues.
+Other ways to do it:
+
+- **Click instead of typing:** Ctrl+click the support to select it, then
+  `delete pbonds sel`.
+- **Keep it, but leave it out of the print:** hide it instead,
+  `hide /A:1@N /A:17@O pbonds`. Only what is shown gets saved.
+- **Careful with whole residues:** `delete pbonds /A:1,17` removes every
+  support between those two residues, not just one.
 
 <a name="thickness"></a>
 
-**Thinner supports.** If the supports dominate the model, make them thinner:
+**Thinner supports.** If the supports look too heavy, make them thinner:
 
 ```chimerax
 size pseudobondRadius 0.4
 ```
 
-This sets every support – hydrogen bonds and struts – to a radius of 0.4 Å;
-`size #1.1 pseudobondRadius 0.4` changes only the hydrogen bonds (model
-`#1.1` here) and `size #2 pseudobondRadius 0.4` only a struts model. It keeps
-their colours and leaves deleted supports deleted. Changing the radius with
-`hbonds radius` or `struts … radius` instead recalculates them, which brings
-deleted ones back.
+This sets all supports to a radius of 0.4 Å. It keeps their colours, and
+supports you deleted stay deleted. To change only the hydrogen bonds, name
+their model: `size #1.1 pseudobondRadius 0.4` (or `#2` for a struts model).
+Avoid `hbonds radius …` or `struts … radius …` for this: they recalculate
+the supports and bring deleted ones back.
 
-Keep two limits in mind, both set by the print size. In the print a support
-is 2 × radius × scale thick, the scale (mm per Å) being in the export report:
-at 100 mm, 1ubq is exported at about 2.9 mm/Å, so a 0.4 Å support is 2.3 mm
-across. It should stay at least three nozzle widths thick (1.2–1.5 mm with a
-0.4 mm nozzle). And a support is joined to the ribbon only by its own
-cross-section – its ends already sit on the ribbon's centre line – so the
-joint weakens with the square of the radius: half the radius, a quarter of the
-strength.
+Don't make them too thin. In the print, a 0.4 Å support at 100 mm is about
+2.3 mm across; keep supports at least 1.2–1.5 mm thick (three widths of a
+0.4 mm nozzle).
+
+> **Why?** A support's thickness in the print is 2 × radius × scale, and the
+> scale (mm per Å) is in the log when you save: about 2.9 mm/Å for 1ubq at
+> 100 mm. A support is also attached to the ribbon only by its own
+> cross-section, so its strength drops with the square of the radius – half
+> the radius, a quarter of the strength.
 
 ### 4. Colour it – then recolour the supports
 
@@ -106,26 +107,22 @@ color strand gold
 color helix tomato
 ```
 
-Supports are pseudobonds between atoms, so colouring the atoms colours the
-supports with them: after the commands above they are blue, gold and red like
-the backbone they join, and in the print they cannot be told apart from it.
-Give them their own colour as the last colouring step:
+These commands colour the supports too, so they now blend into the ribbon.
+Give them their own colour as the **last** colouring step:
 
 ```chimerax
 color lightgray target p halfbond false
 ```
 
-`target p` limits the command to pseudobonds, so it recolours every support –
-hydrogen bonds and struts alike – without needing their model numbers.
-`halfbond false` gives each support one colour rather than two halves in the
-colours of its end atoms. A later plain colour command that covers the
-supports' atoms (`color /A red`, `color strand gold`, …) recolours them again,
-so repeat this afterwards. Colouring by a scheme – `color bychain`, `rainbow`,
-`color byattribute` – leaves them as they are.
+`target p` colours only the supports (hydrogen bonds and struts alike), and
+`halfbond false` gives each one a single colour instead of two halves.
+Repeat this after any later plain colour command such as `color /A red`.
+Colour schemes – `color bychain`, `rainbow`, `color byattribute` – leave the
+supports alone.
 
-> Every colour costs a tool change on each layer it appears in. A support
-> colour that already occurs in the model – the grey of the loops, say – adds
-> no tool changes at all.
+> **Tip:** each colour costs a filament change on every layer it appears in.
+> A support colour that already occurs in the model – the grey of the loops,
+> say – costs nothing extra.
 
 ### 5. Preview colours, print time and smoothness
 
@@ -133,56 +130,59 @@ so repeat this afterwards. Colouring by a scheme – `color bychain`, `rainbow`,
 3mf palette maxColors 4 size 100 tools 4
 ```
 
-Writes nothing. Shows the four parts, how many layers each appears in, the
-time spent changing tools on a 4-tool printer, and whether saving at this size
-will [smooth](#smoothness) the model.
+This saves nothing. It shows the four colours, how much printing time the
+filament changes take on a 4-filament printer, and whether saving at this
+size will [smooth](#smoothness) the model.
 
-### 6. Export
+### 6. Save
 
 ```chimerax
 save ~/Desktop/1ubq.3mf size 100 maxColors 4
 ```
 
-- **size 100** – longest edge 100 mm. **scale** sets millimetres per Å instead
-  (default 1).
-- **maxColors 4** – merge to at most four colours. Needed for continuous
-  colouring such as rainbow or B-factor on a filament printer.
-- **flavor** – **prusa** (default) for PrusaSlicer, **bambu** for Bambu Studio
-  and OrcaSlicer, **fullcolor** for full-colour printers.
-- **parts chain** – one part per chain instead of one piece, for complexes
-  (see [Complexes](#complexes) below). 1ubq has a single chain.
+- **size 100** – the longest side becomes 100 mm. (**scale** sets mm per Å
+  instead.)
+- **maxColors 4** – merge into at most four colours. Set it to the number of
+  filaments your printer has; gradients such as rainbow or B-factor need it.
+- **flavor** – **prusa** (the default) for PrusaSlicer, **bambu** for Bambu
+  Studio and OrcaSlicer, **fullcolor** for full-colour printers.
+- **parts chain** – one part per chain, for complexes (see
+  [Complexes](#complexes)). 1ubq has only one chain.
 
-The report in the log lists the colour parts and what a slicer will make of the
-geometry. Supports scale with the model: at a small scale, well below 1 mm/Å,
-they can become too thin to print. At a large scale the opposite happens:
-ChimeraX's screen tessellation starts to show as flat facets, and the export
-makes it finer, saying so in the log before the file is written. At 100 mm
-1ubq needs none; at 200 mm the supports and ribbons are smoothed.
+The log then lists the colours and what the printer will make of the model.
+Watch the scale: well below 1 mm per Å, supports can get too thin to print.
+Large prints are smoothed automatically – 1ubq at 100 mm needs nothing, at
+200 mm the supports and ribbons get rounder.
+
+> **Good to know:** saving takes a moment for big models. Sticks, balls and
+> spheres of a large structure are millions of triangles: haemoglobin as
+> sticks takes about half a minute, ubiquitin a few seconds. ChimeraX has no
+> progress bar and doesn't respond until it is done, but the status line at
+> the bottom of the window shows what it is working on.
 
 ### 7. Orientation and cavities in Support Optimizer (optional)
 
-Load the 3MF by drag and drop; the colours are kept.
+Drag the 3MF file in; the colours are kept.
 
 - **Surface models only:** *Find cavities*, then *Fill selected cavities*.
-  Sealed cavities would otherwise trap support material that can never be
-  removed. Skip this for cartoon and strut models, where cavity detection is
-  not meaningful.
-- Set the critical overhang angle for the printer (FDM typically about 45°).
-  Above about 20,000 triangles enable *Use low-res proxy*, then *Optimize
-  orientation*.
+  Otherwise support material gets trapped inside where you can never remove
+  it. Skip this for ribbon and strut models.
+- Set the overhang angle your printer manages (about 45° for most FDM
+  printers). For models above about 20,000 triangles, enable *Use low-res
+  proxy*. Then *Optimize orientation*.
 - *Compare to start model* and *Show support paths* show whether the new
   orientation needs less support.
-- *Export 3MF* for multi-colour, or *Export STL* for a single colour.
+- *Export 3MF* for multi-colour, or *Export STL* for one colour.
 
 ### 8. Slicer
 
-- Open the 3MF. Colours arrive as painted extruders (or as separate parts with
-  **paint false**). The painting only arrives with the matching flavour:
-  **prusa** for PrusaSlicer, **bambu** for Bambu Studio and OrcaSlicer.
-- Assign filaments; use organic or tree support material.
-- Do not re-orient the part if Support Optimizer has already done so.
-- Check the preview: no small loose fragments, supports printed continuously.
-- Check the two [slicer settings](#slicer) below that act on painted colours.
+- Open the 3MF. The colours arrive already assigned to filaments – as long
+  as you saved with the flavour for your slicer: **prusa** for PrusaSlicer,
+  **bambu** for Bambu Studio and OrcaSlicer.
+- Assign your filaments, and use organic or tree supports.
+- Don't re-orient the model if Support Optimizer already did.
+- Check the preview: no small loose bits, supports printed without gaps.
+- Check the two [slicer settings](#slicer) for multi-colour prints below.
 
 <a name="tips"></a>
 
@@ -192,59 +192,55 @@ Load the 3MF by drag and drop; the colours are kept.
 
 ### All models
 
-- **Scale.** At the default scale 1 Å becomes 1 mm, which is far too small for
-  most proteins. Fine features such as ribbons and bonds usually need 2–3×
-  enlargement to print reliably.
-- **Minimum feature size.** Plan for at least three nozzle widths (about
-  1.2–1.5 mm with a 0.4 mm nozzle) for supports, bonds and ribbon edges. For
-  models that will be handled, 3 mm or more is safer, and 6 mm for models over
-  20 cm.
-- **Smoothness.** Large prints show the flat facets of screen tessellation; the
-  export smooths them automatically (see [Smoothness](#smoothness) below).
-- **Remove what is not needed** before export: water, unwanted chains, loose
-  ions and additives. For a molecular surface, delete atoms rather than hide
-  them: a hidden atom still shapes the surface computed around it. (Hiding a
-  support, by contrast, simply keeps it out of the file.) Print a ligand
-  separately if it should be removable.
+- **Size.** By default 1 Å becomes 1 mm, far too small for most proteins.
+  Ribbons and bonds usually need 2–3× that to print reliably.
+- **Thickness.** Keep supports, bonds and ribbon edges at least 1.2–1.5 mm
+  thick (three nozzle widths). Models that will be handled are safer at
+  3 mm, and models over 20 cm at 6 mm.
+- **Smoothness.** Large prints are smoothed automatically (see
+  [Smoothness](#smoothness)).
+- **Remove what you don't need** before saving: water, unwanted chains, loose
+  ions. For a surface, *delete* atoms rather than hide them – a hidden atom
+  still shapes the surface around it. (A hidden support, on the other hand,
+  is simply left out.) Print a ligand separately if it should come out.
 - **Orientation.** Automatic orientation (Support Optimizer, or Meshmixer's
-  *Orientation*) noticeably reduces overhangs and support material.
-- **Support material.** Organic or tree supports suit organic shapes. Accept
-  unsupported regions where removal would be impossible, such as inside
-  helices: short overhangs there often bridge. A second material as support
-  interface (for example PETG under PLA) makes removal much easier.
-- **Flat base.** If a model rocks or touches the bed at a single point, cut
-  1–2 mm off the bottom in the slicer's cut tool for a stable, flat contact
-  area.
-- **Multi-colour.** Tool changes cost more time than colour area. Merge colours
-  with **maxColors** (preview with **3mf palette**), pick support colours that
-  already occur in the model, and use the wipe tower, plus purging into infill
-  or the object where the slicer offers it.
-- **Mesh check.** Watertight meshes avoid slicer errors; repair in the slicer or
+  *Orientation*) noticeably cuts down overhangs and support material.
+- **Support material.** Organic or tree supports suit protein shapes. Leave
+  places you could never reach unsupported, such as the inside of a helix:
+  short overhangs there usually bridge. A second material as support
+  interface (PETG under PLA, for example) makes removal much easier.
+- **Flat base.** If the model rocks or touches the bed at a single point, cut
+  1–2 mm off the bottom with the slicer's cut tool.
+- **Multi-colour.** Filament changes cost more time than coloured area.
+  Merge colours with **maxColors** (preview with **3mf palette**), reuse
+  model colours for the supports, and use the wipe tower, plus purging into
+  infill or the object if your slicer offers it.
+- **Mesh check.** Closed meshes avoid slicer errors; repair in the slicer or
   in MeshLab if needed.
 
 <a name="smoothness"></a>
 
 ### Smoothness in large prints
 
-ChimeraX draws for the screen: a support is a 10-sided cylinder, a ribbon tube
-a dozen or so sides around. Scaled up for printing, the flats become visible. A
-0.6 Å support printed at 200 mm is a 3.5 mm-radius prism whose flats sit
-0.17 mm inside the true circle – nearly a whole 0.2 mm layer.
+ChimeraX draws for the screen: a support has 10 flat sides, a ribbon about a
+dozen. Printed large, those flat sides show. A 0.6 Å support printed at
+200 mm has flat sides that sit 0.17 mm inside a true circle – almost a whole
+0.2 mm layer.
 
-Save3MF therefore measures how deep the flat facets are **at the size you
-export at**. Where they are deeper than 0.05 mm, it exports supports, bonds,
-atoms and ribbons with more sides, then restores ChimeraX's settings, so the
-display is left as it was. Before the file is written, a warning in the log
-says what changes and what it costs in triangles. For 1ubq at 200 mm the
-support flats go from 0.17 to 0.04 mm and the file from 0.5 to 1.0 MB; at
-100 mm nothing needs changing.
+So when you save, Save3MF checks how deep those flat sides would be **at your
+print size**. Where they are deeper than 0.05 mm, it saves the supports,
+bonds, atoms and ribbons with more sides. The log says so first, including
+the extra file size, and your view in ChimeraX stays as it was. For 1ubq at
+200 mm, the support flats go from 0.17 to 0.04 mm and the file from 0.5 to
+1.0 MB; at 100 mm nothing changes.
+
+To check in advance, without saving anything:
 
 ```chimerax
 3mf palette size 200
 ```
 
-shows in advance, without writing anything, whether saving at that size will
-smooth the model. The target can be changed when saving:
+You can change the target when saving:
 
 - `save model.3mf size 200 smoothness 0.1` – coarser: fewer triangles, a
   smaller file
@@ -253,9 +249,9 @@ smooth the model. The target can be changed when saving:
 
 In the Save dialog this is the *Smooth for printing* option.
 
-Molecular and map surfaces are not re-tessellated: their fineness is fixed
-when they are computed. If theirs is too coarse for the print size, the log
-says so; recompute a molecular surface finer with, for example,
+Surfaces of molecules and maps are not changed: how fine they are is set
+when ChimeraX computes them. If a surface is too coarse for your print size,
+the log tells you. Make a molecular surface finer with, for example,
 `surface gridSpacing 0.3`, or show a map at full resolution with
 `volume step 1`.
 
@@ -263,131 +259,153 @@ says so; recompute a molecular surface finer with, for example,
 
 ### Complexes of several chains
 
-A complex – an AlphaFold prediction of two interacting proteins, a dimer from
-the PDB – normally arrives in the slicer as one piece. To handle each chain on
-its own, export one part per chain, for example with
-`save complex.3mf size 100 parts chain flavor bambu`:
+A complex – say an AlphaFold prediction of two proteins, or a dimer from the
+PDB – normally arrives in the slicer as one piece. To handle each chain on
+its own, save one part per chain:
+`save complex.3mf size 100 parts chain flavor bambu`.
 
-- The slicer lists one object with a part per chain (*chain A*, *chain B*, …).
-  Each can be selected, hidden or given its own settings, and keeps its
-  painted colours, such as a highlighted binding site.
-- The chains stay in place. Separate objects would not: a slicer puts every
-  object on the bed, which would pull a chain that floats above it down.
-- **parts model** does the same per model, for structures opened side by side.
-- Use the flavour of your slicer (**prusa** or **bambu**). With the wrong one
-  the file opens, but not as intended: Bambu Studio and OrcaSlicer show a
-  prusa file as one part without its colours, and PrusaSlicer takes a bambu
-  file apart into separate objects.
+- The slicer shows one object with a part per chain (*chain A*, *chain B*,
+  …). You can select, hide or set up each one separately, and it keeps its
+  colours.
+- The chains stay where they are. (As separate objects, the slicer would
+  drop each one onto the bed.)
+- A surface that covers several chains – made with `surface … enclose`, or
+  by the NIH surface presets – stays one part, *surface of chains A, B*:
+  split along the chains, it would have holes. For a separate surface per
+  chain, run `surface close` and then `surface` before saving.
+- **parts model** does the same per model, for structures opened side by
+  side.
+- Use the flavour for your slicer (**prusa** or **bambu**). With the wrong
+  one, the file opens but not as intended: Bambu Studio and OrcaSlicer show a
+  prusa file as one part without colours, and PrusaSlicer splits a bambu file
+  into separate objects.
 - To print the chains as separate pieces, split the object in the slicer
-  (OrcaSlicer: right-click → *Split* → *To objects*). Each piece is then put
-  on the bed, and the split drops the painting, so assign a filament to each
-  piece afterwards. Tiny extra pieces from the split are cavities inside the
-  protein and can be deleted.
+  (OrcaSlicer: right-click → *Split* → *To objects*). This drops the
+  colours, so assign a filament to each piece afterwards. Tiny extra pieces
+  from the split are hollow spaces inside the protein and can be deleted.
 
 In the Save dialog this is the *Parts* option.
 
 ### Surface models
 
-- The easiest representation to print on an FDM printer.
-- Seal interior cavities and tunnels first (Support Optimizer), or support
-  material is trapped inside.
-- A smaller probe radius (for example 0.5–1.4 Å) shows more detail; a finer
-  grid gives a smoother surface but a larger file. Large structures may need
-  splitting into several surfaces.
-- Chain colours print as painted regions; check the slicer's
+- The easiest kind of model to print on an FDM printer.
+- Fill hollow spaces inside first (Support Optimizer), or support material
+  gets trapped.
+- A smaller probe radius (0.5–1.4 Å) shows more detail; a finer grid gives a
+  smoother surface but a bigger file. Very large structures may need to be
+  split into several surfaces.
+- Chain colours print as painted areas; see the slicer's
   [segmented region width](#segmented).
-- Large complexes such as capsids: print subunits or halves separately and join
-  them with pins or magnets. That eases printing and support removal, and
-  assembling them is useful for teaching.
+- Large complexes such as virus shells: print subunits or halves separately
+  and join them with pins or magnets. That makes printing and support
+  removal easier, and putting them together is great for teaching.
 
 ### Cartoon and ribbon models
 
-- Thicken ribbons (`cartoon style … thickness`, or `struts … fattenRibbon true`)
-  and enlarge 2–3×.
+- Make the ribbons thicker (`cartoon style … thickness`, or
+  `struts … fattenRibbon true`) and print 2–3× larger.
 - Struts are essential. A typical choice is
   `struts @ca length 7 loop 30 radius 0.8 fattenRibbon true`; the NIH presets
-  add supports automatically. For nucleic acids,
+  add supports for you. For DNA and RNA:
   `struts @C5' length 15 loop 80 radius 1`.
-- Hydrogen bonds shown as thick sticks (radius about 0.5 Å) stabilise sheets
-  and helices as well.
-- Check the supports after a preset, and recolour them after a plain colour
-  command (steps [3](#supports) and 4 above). If they dominate the model,
-  [make them thinner](#thickness) – within the limits the print size sets.
-- In Support Optimizer, cavity detection is not meaningful for cartoons;
-  orientation search and support preview are.
-- Very delicate ribbons often print better on resin (SLA) or SLS printers. On
-  FDM, a lower speed and organic supports help.
+- Hydrogen bonds shown as thick rods (radius about 0.5 Å) also hold sheets
+  and helices together.
+- After a preset, check the supports, and recolour them after a plain colour
+  command (steps [3](#supports) and 4). If they look too heavy,
+  [make them thinner](#thickness) – but not below what the print size
+  allows.
+- In Support Optimizer, skip the cavity search for ribbons; orientation and
+  support preview work as usual.
+- Very delicate ribbons often print better on resin (SLA) or powder (SLS)
+  printers. On FDM, print slower and use organic supports.
 
 ### Space-filling and ball-and-stick models
 
-- Sphere models are surface-like and print robustly. Overlapping spheres are
-  fused by the slicer; the export report counts bodies closer than about
-  0.4 mm as one.
-- In ball-and-stick, the bonds are the weak point: use thick sticks, enlarge the
-  model, and print large molecules in parts if needed.
-- Round undersides need support. A flat cut at the bottom, or a deliberate base
-  group of atoms, reduces it.
+- Sphere models behave like surfaces and print well. Touching spheres fuse
+  in the print; the log counts parts closer than about 0.4 mm as one.
+- In ball-and-stick, the sticks are the weak point: make them thick, print
+  larger, and split big molecules into parts if needed.
+- Round undersides need support. A flat cut at the bottom, or a few atoms
+  chosen as a base, reduces it.
 
 ### Materials
 
 Three plastics cover almost everything a protein model needs:
 
-- **PLA** (polylactic acid) is made from plant starch or sugar. It is the
-  easiest to print – a low printing temperature, little warping, crisp detail
-  – and comes in the widest range of colours. It is stiff but brittle, and
-  softens at about 60 °C, so a model left in a hot car can deform. Although
-  plant-based, it decomposes only in industrial composting. The usual choice
-  for teaching and display models.
-- **PETG** (polyethylene terephthalate, glycol-modified) is related to the
-  plastic of drinks bottles. It is tougher and less brittle than PLA, bends a
-  little before it breaks, and tolerates more heat and chemicals. It strings
-  more while printing. Good for models that are handled a lot.
-- **TPU** (thermoplastic polyurethane) is elastic and rubber-like. It prints
-  slowly and needs care, but makes parts that bend and spring back – for
-  example a flexible joint between two printed parts.
+- **PLA** is made from plant starch or sugar. It is the easiest to print –
+  low temperature, little warping, crisp detail – and comes in the most
+  colours. It is stiff but brittle, and softens at about 60 °C, so a model
+  left in a hot car can bend. Despite being plant-based, it only breaks down
+  in industrial composting. The usual choice for teaching and display.
+- **PETG** is related to the plastic of drinks bottles. It is tougher than
+  PLA, bends a little before it breaks, and copes better with heat and
+  chemicals, but strings more while printing. Good for models that get
+  handled a lot.
+- **TPU** is soft and rubbery. It prints slowly and needs care, but makes
+  parts that bend and spring back – for example a flexible joint between two
+  printed parts.
 
-Which materials combine:
+Which ones combine:
 
-- PLA and PETG barely stick to each other. That makes PETG an ideal support
-  interface under PLA: the supports break away cleanly. For the same reason, a
-  model that combines the two needs [beam interlocking](#interlocking) to hold
+- PLA and PETG hardly stick to each other. That makes PETG ideal as support
+  interface under PLA: the supports snap off cleanly. For the same reason, a
+  model made of both needs [beam interlocking](#interlocking) to hold
   together.
-- TPU only with beam interlocking and a compatible partner: PETG with TPU
+- TPU only with beam interlocking and a suitable partner: PETG with TPU
   works, PLA with TPU poorly.
 
 <a name="slicer"></a>
 
-## Slicer settings that act on these files
+## Slicer settings for multi-colour prints
 
-Two multi-material settings apply to painted colours, and so to every
-multi-colour file from Save3MF. They exist under the same names, with the same
-defaults, in PrusaSlicer, OrcaSlicer and Bambu Studio; type "interlocking" into
-the settings search to find them. Times below were measured with PrusaSlicer
-2.9.6 on an Original Prusa XL profile (0.20 mm, 0.4 mm nozzle).
+Two settings act on painted colours, so they matter for every multi-colour
+Save3MF file. PrusaSlicer, OrcaSlicer and Bambu Studio all have them, under
+the same names and with the same defaults; type "interlocking" into the
+settings search to find them. The times below were measured with
+PrusaSlicer 2.9.6 on an Original Prusa XL profile (0.20 mm layers, 0.4 mm
+nozzle).
 
 <a name="segmented"></a>
 
 ### Maximum width of a segmented region
 
-How deep a painted colour reaches into the object. The Original Prusa XL
-profiles set 5 mm (PrusaSlicer's own default is 0, meaning all the way
-through). With 5 mm each painted colour is a 5 mm shell, and the core takes a
-neighbouring colour. From outside the model looks the same, and filament
-changes are saved; but a model that will be cut or sectioned to show solid
-chain colours inside needs this set to 0. *Interlocking depth of a segmented
-region*, greyed out while the width is 0, alternates the shell depth layer by
-layer so shell and core interlock.
+How deep a painted colour goes into the model. The Original Prusa XL profiles
+set 5 mm; PrusaSlicer's own default is 0, meaning all the way through.
+
+- **5 mm:** each colour is a 5 mm shell around a core of a neighbouring
+  colour. It looks the same from outside and saves filament changes.
+- **0:** colours go all the way through. Use this if the model will be cut
+  open to show solid chain colours inside.
+
+*Interlocking depth of a segmented region* (greyed out while the width is 0)
+varies the shell depth from layer to layer so that shell and core grip each
+other.
 
 <a name="interlocking"></a>
 
 ### Beam interlocking
 
-Weaves two materials into each other where different extruders meet: thin,
-alternating, crossed beams a few millimetres into each side, hidden from the
-surface by *boundary avoidance*. It is a mechanical bond, made for materials
-that do not stick to each other (PLA with PETG, rigid with TPU) – but on
-protein models it is needed for colours of a single material too. It acts on
-painted colour boundaries as well as on separate parts.
+Where two colours meet, this weaves them into each other with thin crossed
+beams a few millimetres deep, hidden under the surface. It was made for
+materials that don't stick to each other (PLA with PETG, rigid with TPU),
+but on protein models it is needed even when all colours are the same
+plastic. It works on painted colours as well as separate parts.
+
+What to do:
+
+- Turn it on for multi-colour protein models, even in a single material, and
+  expect 17–42 % more printing time.
+- Start with the defaults and print a small test piece – a single joint of
+  the model is enough – before the whole model. If it doesn't hold, raise the
+  depth first and leave *boundary avoidance* for last: that setting is what
+  keeps the weave hidden under the surface.
+- Keep boundary avoidance at 2 or more on visible models; below that the
+  stripes can show on the surface.
+- Give the weave room. Thin parts – ribbons, supports, narrow contacts
+  between chains – are often thinner than the hidden zone, so the weave
+  disappears or shows through there (reported as PrusaSlicer issue #15011).
+  Thicker supports and ribbons, or a larger print, help. It works best on
+  surface models with large contact areas.
 
 | Variant | Print time | Tool changes |
 |---|---|---|
@@ -395,32 +413,16 @@ painted colour boundaries as well as on separate parts.
 | On, defaults (0.8 mm, 22.5°, 2 layers, depth 2, avoidance 2) | 30 m 30 s (+17 %) | 64 |
 | Painted object with horizontal colour bands, off → on | 40 m 07 s → 56 m 49 s (+42 %) | 32 → 44 |
 
-> **Needed, but hard to hide on protein models.** Printed on an Original Prusa
-> XL in PLA throughout, a 1ubq ribbon model showed both sides of it. Without
-> interlocking, joints between two colours – a loop meeting a β-strand, say –
-> held only briefly and broke apart at the joint surface: walls printed by
-> different tools, one after the other, fuse only weakly. With it, PrusaSlicer
-> often failed to connect the parts properly at the defaults, and settings
-> strong enough for proper contact – depth 3, boundary avoidance 1 – pushed
-> each colour into its neighbour where it showed on the surface. The parts of
-> such a model are only a few millimetres thick, while interlocking works in
-> cells twice the beam width (1.6 mm by default): boundary avoidance 1 keeps
-> the beams just one cell from the outside. The feature is experimental, and
-> it shows here.
-
-- Turn it on for multi-colour protein models, also in a single material, and
-  expect it to add 17–42 % to the print time.
-- Start from the defaults and print a small test piece – a single joint of the
-  model is enough – before the whole model. Raise the depth before lowering
-  boundary avoidance: avoidance is what keeps the weave off the surface.
-- Keep boundary avoidance at 2 or more on visible models; below that the
-  striping can show on the surface, including the first and top layers.
-- Give the weave room. Thin features – ribbons, supports, narrow chain contacts
-  – are often thinner than the avoidance zone, so the structure mostly
-  disappears there or reaches the surface; weak or one-sided interlocking on
-  thin parts has been reported (PrusaSlicer issue #15011). Thicker supports and
-  ribbons, or a larger print, leave space to hide it and give the joint more
-  area. It works best on surface models with large contact areas.
+> **Experience from a real print.** A 1ubq ribbon model in PLA on an Original
+> Prusa XL showed both sides of it. Without interlocking, joints between two
+> colours – a loop meeting a β-strand, say – held only briefly and then broke
+> apart, because walls printed one after the other by different tools fuse
+> only weakly. With interlocking at the defaults, PrusaSlicer often failed to
+> connect the parts properly; settings strong enough to hold – depth 3,
+> boundary avoidance 1 – pushed each colour into its neighbour where it
+> showed on the surface. The parts of such a model are only a few
+> millimetres thick, while the weave needs cells twice the beam width
+> (1.6 mm by default). The feature is still experimental, and it shows here.
 
 <a name="sources"></a>
 
@@ -462,6 +464,6 @@ combination, a ChimeraX command, a mistake worth avoiding.
   [docs/printing-protein-models.md](https://github.com/erikeppinger/chimerax-save3mf/blob/main/docs/printing-protein-models.md);
   open a pull request. See [CONTRIBUTING](../CONTRIBUTING.md) for the details.
 
-Tips are checked before they are added, and ChimeraX commands are run, so that
-everything on this page has worked at least once. Add the source if the tip
-comes from somewhere else.
+Tips are checked before they are added, and ChimeraX commands are run, so
+everything on this page has worked at least once. Please add the source if
+the tip comes from somewhere else.

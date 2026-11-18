@@ -11,9 +11,8 @@ come out as one run-together paragraph. Keep this copy table-free.
 
 ## Short description
 
-> Save the current scene as 3MF for 3D printing, with ChimeraX colouring
-> carried through — as extruder assignments for a multi-filament printer, or
-> as a colour at every vertex for a full-colour one.
+> Save your ChimeraX scene as a 3MF file for 3D printing, in colour: ready
+> for a multi-filament printer, or for a full-colour one.
 
 ## Tags
 
@@ -25,99 +24,92 @@ molecular models, printability
 
 ## Full description
 
-**Save3MF** adds 3MF to the formats ChimeraX can save, and carries your
-colouring into the print.
+**Save3MF** lets ChimeraX save a scene as a 3MF file, the format 3D-printing
+software opens, and keeps your colours.
 
 ```
 save molecule.3mf size 80
 ```
 
-The scene is written as it is displayed. Instanced geometry — atom spheres,
-bond cylinders — is expanded into real triangles, coincident vertices are
-merged, and the model is scaled to millimetres and placed on the build plate.
+What you see is what gets printed. The model is scaled to the size you ask
+for – here 80 mm along its longest side – and placed on the build plate.
 
-### Colour reaches the printer
+### Your colours reach the printer
 
-- **Multi-filament printers** — MMU, toolchanger, AMS — with `flavor prusa`
-  (the default) or `flavor bambu`: each colour is painted onto the triangles as
-  an extruder assignment.
-- **Full-colour printers** — inkjet, binder jet, PolyJet — with
-  `flavor fullcolor`: a colour at every vertex, interpolated across each
-  triangle.
-- **Single-filament printers**: plain geometry, whichever flavor is used;
-  colour is simply ignored.
+- **Multi-filament printers** (MMU, tool changer, AMS): each colour arrives
+  already assigned to a filament. Use `flavor prusa` (the default) for
+  PrusaSlicer, `flavor bambu` for Bambu Studio and OrcaSlicer.
+- **Full-colour printers** (inkjet, binder jet, PolyJet): use
+  `flavor fullcolor` to keep every shade.
+- **Single-filament printers**: any flavor works; the colours are ignored.
 
-On a multi-filament printer the slicer opens the file with each chain or
-region already assigned to its own filament — no manual splitting, no clicking
-parts. Colouring by chain, by element or by any discrete scheme comes through
-directly; continuous schemes such as `mlp` or B-factor can either be reduced
-to the number of filaments you have, or kept in full with `flavor fullcolor`.
+Colouring by chain, by element or by secondary structure comes through as it
+is. Gradients such as rainbow or B-factor have more colours than you have
+filaments: `maxColors 4` merges them into four, or `flavor fullcolor` keeps
+them all.
 
-### It tells you what will happen before you print
+### It checks the model before you print
 
-ChimeraX scenes are built from abutting and overlapping surfaces rather than
-one stitched mesh, and the report is written around that:
+The log tells you what the printer will make of your scene:
 
-- how many objects the print will really produce, counting surfaces that fuse
-  as one body
-- interior cavities, which slicers leave hollow
-- pieces that genuinely float free, such as waters or ions
-- geometry hidden inside other geometry, which costs filament and cannot be
-  seen
-- features too thin for a 0.4 mm nozzle, and models too large for the plate
+- how many separate pieces it will print
+- hollow spaces inside the model
+- loose bits, such as waters or ions
+- parts hidden inside other parts, which cost filament but can't be seen
+- parts too thin to print, or a model too big for the build plate
 
-`3mf palette` previews the colour regions before you export, showing both what
-merging them costs perceptually (ΔE) and what it costs in print time.
+`3mf palette` previews the colours before you save: which would be merged,
+how different they look, and how much printing time each colour costs.
 
-### Smooth at any print size
+### Smooth at any size
 
-ChimeraX draws cylinders and ribbons with few sides, which shows as flat
-facets once a model is scaled up for printing. Each export measures how deep
-the flats are at the chosen size and, where they would show (deeper than
-0.05 mm by default), exports supports, bonds, atoms and ribbons more finely –
-saying so in the log first, and leaving the display as it was.
-`smoothness off` exports exactly what is drawn.
+ChimeraX draws sticks, spheres and ribbons with a few flat sides, which is
+fine on screen but shows on a large print. When you save, Save3MF checks whether the flat
+sides would be visible at your print size and, if so, saves rounder shapes
+instead. Your view in ChimeraX stays as it was. `smoothness off` saves
+exactly what is drawn.
 
 ### One part per chain
 
-A complex normally arrives in the slicer as one piece. With `parts chain`
-each chain becomes its own part – selectable, with its own settings, colours
-still painted – while the complex stays assembled as one object. `parts model`
-does the same per model.
+A complex normally arrives in the slicer as one piece. With `parts chain`,
+each chain becomes a part of its own that you can select and set up
+separately, with its colours kept, while the complex stays together.
+`parts model` does the same for each model.
 
 ```
 save complex.3mf parts chain flavor bambu
 ```
 
-### Printing protein models
+A surface that covers several chains stays one part; `surface` makes one per
+chain.
 
-The help includes a worked example – ubiquitin from the PDB to a four-colour
-print, every command clickable – with tips for each kind of model and the
-slicer settings that act on multi-colour files. It is also on GitHub, where
-everyone can contribute tips:
+### Learn by example
+
+The help includes a step-by-step example, from the PDB entry for ubiquitin to
+a four-colour print, where every command is a link you can click. It also has
+tips for each kind of model and the slicer settings that matter for
+multi-colour prints. The same guide is on GitHub, where you can add tips of
+your own:
 [Printing protein models](https://github.com/erikeppinger/chimerax-save3mf/blob/main/docs/printing-protein-models.md).
 
-### Verified against real slicers
+### Tested with real slicers
 
-Colour handling in 3MF is barely documented and the published encoding tables
-are wrong, so every format decision here was established by experiment against
-PrusaSlicer, Bambu Studio and OrcaSlicer. The probe files and results are in
-the repository. Output has been checked through to G-code on PrusaSlicer.
+How slicers read colour from 3MF files is barely documented, so every detail
+was tested in PrusaSlicer, Bambu Studio and OrcaSlicer, and in PrusaSlicer
+sliced all the way to printer code.
 
 ### Links
 
 - Source, issues and documentation:
   https://github.com/erikeppinger/chimerax-save3mf
-- `help 3mf` inside ChimeraX for the full option list
+- `help 3mf` in ChimeraX lists every option
 - [Printing protein models](https://github.com/erikeppinger/chimerax-save3mf/blob/main/docs/printing-protein-models.md):
-  a worked example from a PDB entry to a multi-colour print, with tips for
-  each kind of model. Have a tip of your own? Contributions are welcome there.
-- Preparing structures for printing — struts, thickened ribbons, solvent
-  removal — is the job of the
-  [NIH 3D print presets](https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxnihpresets)
-  bundle; Save3MF only measures and reports.
-- [Support Optimizer](https://github.com/erikeppinger/support-optimizer) seals
-  the cavities this reports, optimises print orientation and previews supports.
+  the step-by-step guide
+- [NIH 3D print presets](https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxnihpresets):
+  make a structure printable – thicker ribbons, supports, solvent removed.
+  Save3MF saves and checks; it doesn't change your model.
+- [Support Optimizer](https://github.com/erikeppinger/support-optimizer):
+  fills hollow spaces, finds the best print orientation and previews supports
 
 ### Credit
 

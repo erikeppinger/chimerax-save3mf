@@ -2,23 +2,20 @@
 
 <img src="docs/icon/save3mf-wordmark.png" alt=".3mf" height="64">
 
-Save a ChimeraX scene as a **3MF** file for 3D printing, with the colours you
-set up in ChimeraX carried through as painted extruders — so a multi-material
-slicer opens the file with each chain already assigned to its own filament.
+Save a ChimeraX scene as a **3MF** file for 3D printing, with your colours
+kept: a multi-filament slicer opens the file with each colour already assigned
+to its own filament, and a full-colour printer gets every shade.
 
 ```
 save molecule.3mf size 80
 ```
 
-It also tells you what a slicer will make of the geometry *before* you print —
-how many objects it will really produce, which bits are interior cavities,
-which are genuinely loose, and what each colour costs in print time. ChimeraX
-scenes are built from abutting and overlapping surfaces rather than one
-stitched mesh, and the report is written around that.
+It also tells you what the printer will make of your scene *before* you print:
+how many separate pieces it will produce, where there are hollow spaces or
+loose bits, and what each colour costs in printing time.
 
-Verified end to end against **PrusaSlicer**, **Bambu Studio** and
-**OrcaSlicer**: the exports load, keep their painting through a round trip,
-and slice with one filament per chain.
+Tested with **PrusaSlicer**, **Bambu Studio** and **OrcaSlicer**: the files
+load, keep their colours, and slice with one filament per colour.
 
 > **Built with AI assistance.** This bundle was written by Claude (Anthropic)
 > working with Erik Eppinger, and every commit carries a `Co-Authored-By`
@@ -37,8 +34,8 @@ Both kinds, but they need different files — pick with `flavor`:
 
 | Your printer | Use | What the file carries |
 |---|---|---|
-| **Multi-filament** (MMU, toolchanger, AMS) | `flavor prusa` (default) or `flavor bambu` | each colour painted onto the triangles as an extruder assignment, up to 15 |
-| **Full colour** (inkjet, binder jet, PolyJet) | `flavor fullcolor` | a colour at every vertex, interpolated across each triangle — continuous colouring such as `mlp` or B-factor survives intact |
+| **Multi-filament** (MMU, toolchanger, AMS) | `flavor prusa` (default) for PrusaSlicer, `flavor bambu` for Bambu Studio and OrcaSlicer | each colour painted on and assigned to a filament, up to 15 |
+| **Full colour** (inkjet, binder jet, PolyJet) | `flavor fullcolor` | every shade, blended smoothly across the surface — gradients such as `mlp` or B-factor survive intact |
 | **Single filament** | any, colour is simply ignored | plain geometry |
 
 `flavor fullcolor` has no colour limit and does no clustering: it writes the
@@ -181,10 +178,10 @@ reports the mean colour shift:
 Each colour is always a real colour from the scene, never an averaged one.
 
 Two limits worth knowing, both specific to **filament** printers. A slicer can
-paint at most **15** extruders; above that the exporter splits the mesh into
-parts instead and says so. And a file can paint more extruders than your
-printer has tools — the surplus then prints with filament 1 and the slicer
-says nothing, so the exporter warns above five.
+paint at most **15** colours; above that, similar colours are merged into 15
+and the log says so. And a file can hold more colours than your printer has
+filaments – the extra ones then print with filament 1 and the slicer says
+nothing, so the exporter warns above five.
 
 Neither applies to `flavor fullcolor`, which writes every colour as it is.
 
@@ -203,7 +200,10 @@ slicer drops each object onto the bed, and Bambu Studio and OrcaSlicer
 rearrange them as well (probes J and K in
 [probes/RESULTS.md](probes/RESULTS.md)). Surface triangles go to the chain of
 the atom they surround; cartoons, sticks and spheres are one drawing for all
-chains, so their triangles go to the chain of the nearest drawn atom.
+chains, so their triangles go to the chain of the nearest drawn atom. A
+surface that covers several chains (`surface … enclose`) is saved as one part,
+*surface of chains A, B*: split along the chains, it would have holes.
+`surface` makes one per chain.
 `parts model` splits per top-level model (#1, #2, …) instead.
 
 ### Choosing the number of colours before exporting
@@ -235,12 +235,12 @@ pick a number, then pass it to `save`.
 A multi-material print spends most of its time changing tools, and each change
 purges filament into a wipe tower. What makes a colour expensive is not its
 area but **how many layers it appears in**, since it forces a tool change on
-each one. A part covering 0.4% of the model can cost half an hour:
+each one. A colour covering 0.4% of the model can cost a quarter of an hour:
 
 ```
-Color 5 (1a3n_D SES surface red) is 0.4% of the model but costs about 16m of
+Color 5 (1a3n_D SES surface red) is 0.4% of the model but costs about 15m of
 tool changes, because it appears in 52 of 269 layers. Dropping it with
-'maxColors 4' would get that time back.
+maxColors 4 would get that time back.
 ```
 
 The figure counts **only the time spent changing tools**, not the whole print:
@@ -276,13 +276,15 @@ chain against the calibration runs.
 | `src/printcost.py` | tool-change estimate behind the print-cost flag |
 | `src/smoothness.py` | flat-facet depth at print size, and finer tessellation for the export |
 | `src/log.py` | log messages with clickable help links |
+| `src/rows.py` | fast `unique` for rows of integers (edges, colours) |
+| `src/progress.py` | status-line progress during a long export |
 | `docs/commands/3mf.html` | user documentation, installed into ChimeraX help |
 | `docs/printing-protein-models.md` | the printing tutorial: worked example (1ubq) and tips; the one source to edit |
 | `docs/commands/3mf-printing.html` | the tutorial as a ChimeraX help page, generated by `tools/build_tutorial.py` |
 | `examples/1ubq-print.cxc` | the worked example as a ChimeraX script |
 | `probes/` | slicer experiments and [RESULTS.md](probes/RESULTS.md) — why the file looks the way it does |
 | `tools/` | probe generators, 3MF validator and inspector, cost-model check |
-| `tests/` | `run_all.ps1` driver, headless export suite, widget and palette captures |
+| `tests/` | `run_all.ps1` driver, headless export suite, stress run over real scenes (`run_scenes.ps1`), widget and palette captures |
 
 ## Testing
 
@@ -290,14 +292,15 @@ chain against the calibration runs.
 .\tests\run_all.ps1
 ```
 
-Six stages, each of which fails the run:
+Seven stages, each of which fails the run:
 
 | Stage | What it proves |
 |---|---|
 | **tutorial page** | the help page generated from `docs/printing-protein-models.md` matches it |
 | **lint** | [Ruff](#linting) finds nothing with the rules in `pyproject.toml` |
 | **install** | `devel install` succeeded **and** the installed bytes match `src/` — a failed build silently leaves the old version in place, so a whole run can otherwise pass against stale code |
-| **export tests** | 73 checks over real exported files: geometry matches ChimeraX's own STL export, `size` is exact, nothing sits at negative coordinates, painting covers every triangle, split parts tile the mesh with no gaps, one part per chain keeps every chain's colours, the >15-colour fallback works, smoothing stays within its target, an empty scene errors clearly |
+| **export tests** | 89 checks over real exported files: geometry matches ChimeraX's own STL export, `size` is exact, nothing sits at negative coordinates, painting covers every triangle, split parts tile the mesh with no gaps, one part per chain keeps every chain's colours, a surface around several chains stays whole and closed, more than 15 colours are merged into a closed painted model, smoothing stays within its target, a long export shows its progress and clears it, an empty scene errors clearly |
+| **body rules** | 10 checks of the printability report on shapes whose answer is known: overlapping, touching and separate boxes, a cavity, a stray vertex |
 | **slicers** | PrusaSlicer loads the painted export as manifold, preserves the painting through a round trip and **actually slices it**; Bambu Studio and OrcaSlicer preserve `paint_color`; all three keep a per-chain export as one object with every chain a painted part. The tool-change estimate is checked against the real G-code and must stay within 5% |
 | **wheel** | `devel build` produces a wheel containing both the package and its documentation |
 
@@ -319,6 +322,31 @@ Individual pieces can be run on their own:
 
 Note: the `python` on PATH is the Microsoft Store stub and does not run.
 Use ChimeraX's bundled interpreter as above.
+
+### Stress run
+
+```bash
+.\tests\run_scenes.ps1
+```
+
+The export tests build each scene from a few chosen commands. The stress run
+instead exports the scenes users actually make: every printable NIH 3D preset
+on three structures, an AlphaFold model and a map, plus a dozen scenes built
+by hand – ribbons with ligands, struts, hydrogen bonds, hidden chains, two
+structures side by side, a clipped surface. Each is saved with the common
+options (default, `parts chain`, `flavor bambu`, `flavor fullcolor`,
+`paint false`, `maxColors 3`), and every file must validate, be closed where
+the scene is a closed solid, give a printability report whose numbers make
+sense, and load in PrusaSlicer as manifold.
+
+During the run the exporter's unfilled arrays are filled with garbage, so
+code that reads an entry it never wrote fails every time rather than once in
+a hundred exports. That is how a crash with the NIH presets in 0.2.4 and
+0.2.5 escaped the export tests.
+
+It needs the ChimeraX window, because the presets do, and takes about an
+hour, so it is not part of `run_all.ps1`. `-Only "1ubq"` runs the scenes
+whose name contains the text. Results go to `tests/out/scenes/`.
 
 ### Linting
 
@@ -360,7 +388,7 @@ gap. That is what `flavor` selects between; see
 |---|---|---|
 | `prusa` (default) | one mesh, extruder painted per triangle (`slic3rpe:mmu_segmentation`) | PrusaSlicer |
 | `bambu` | one mesh, extruder painted per triangle (`paint_color`) | Bambu Studio, OrcaSlicer |
-| `generic` | geometry and colour tags only, no slicer data | any 3MF reader |
+| `fullcolor` | one mesh, a colour per vertex (Materials `colorgroup`); `generic` is an older name | full-colour printers, 3MF viewers |
 
 ### Painting, not splitting
 
@@ -370,8 +398,12 @@ is nothing for the slicer to repair.
 
 The alternative, splitting the mesh into one part per colour, leaves every
 patch edged with open boundaries and a repair warning on every part. Pass
-`paint false` to get that layout anyway; it is also the automatic fallback
-above 15 colours, which is the most a slicer can paint.
+`paint false` to get that layout anyway.
+
+A slicer can paint at most 15 colours. A scene with more – a rainbow, a
+Coulombic surface – has its similar colours merged into 15, and the log says
+so. Set `maxColors` to the number of filaments your printer has: colours
+beyond it all print with filament 1.
 
 ## Printability check
 
@@ -430,29 +462,16 @@ ribbons, solvent removal) is what the
 [NIH 3D print presets](https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxnihpresets)
 bundle is for. The exporter just tells you when you need it.
 
-After applying a preset, look over the supports it adds before exporting. It
-draws hydrogen bonds as thick cylinders and adds struts where pieces need
-holding together; most help, but an occasional one is badly placed for
-printing — pinning a terminus at an awkward angle, say, or creating an
-overhang that needs support material. Hover over it to see which two atoms it
-joins, then remove it by naming them. For ubiquitin (PDB 1ubq), for example,
-the hydrogen bond between Met1 N and Val17 O:
-
-```
-delete pbonds /A:1@N /A:17@O
-```
-
-or, for any structure, Ctrl+click the support and use `delete pbonds sel`. To keep it in the session but out
-of the file, hide it instead (`hide /A:1@N /A:17@O pbonds`) — only what is
-displayed is exported. `delete pbonds` removes every pseudobond whose two ends
-are both in the specification, so a residue-level spec such as `/A:1,17`
-removes all supports between those residues.
+After applying a preset, look over the supports it adds: now and then one
+sits badly for printing. The tutorial's
+[Check the supports](docs/printing-protein-models.md#supports) shows how to
+find and remove it.
 
 ## Related
 
 **[Support Optimizer](https://github.com/erikeppinger/support-optimizer)** —
-a browser-only tool for preparing molecular structures and meshes for
-printing. It picks up where this bundle leaves off: it reads the `.3mf` (or
+a tool for preparing molecular structures and meshes for printing, in the
+browser or as a desktop app. It picks up where this bundle leaves off: it reads the `.3mf` (or
 `.stl`) written here, seals interior cavities so support material cannot get
 trapped in them, searches for an orientation that minimises overhangs, and
 previews the support paths before you commit to a slice.

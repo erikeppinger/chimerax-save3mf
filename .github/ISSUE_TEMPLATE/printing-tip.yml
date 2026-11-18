@@ -16,6 +16,7 @@ body:
       label: Which kind of model is it about?
       options:
         - All models
+        - Complexes of several chains
         - Surface models
         - Cartoon and ribbon models
         - Space-filling and ball-and-stick models

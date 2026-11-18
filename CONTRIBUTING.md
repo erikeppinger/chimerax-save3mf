@@ -21,8 +21,8 @@ What makes a tip easy to accept:
   written.
 - If it comes from somewhere else – a guide, paper, forum post – add it to
   *Sources*.
-- It goes in the section it belongs to (all models, surface, cartoon,
-  space-filling and ball-and-stick, materials, slicer settings).
+- It goes in the section it belongs to (all models, complexes, surface,
+  cartoon, space-filling and ball-and-stick, materials, slicer settings).
 
 Edit only the Markdown. The help page inside ChimeraX,
 `docs/commands/3mf-printing.html`, is generated from it; the maintainer

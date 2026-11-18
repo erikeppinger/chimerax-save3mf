@@ -36,12 +36,12 @@ address { margin-top: 2.5em; font-size: 85%; color: #666; font-style: normal; }
 <h3>3MF export for 3D printing</h3>
 
 <p>
-Saves the scene as a <a href="https://3mf.io/specification/">3MF</a> file,
-carrying the colouring with it: as extruder assignments for a multi-filament
-printer, or as a colour at every vertex for a full-colour printer. See
-<a href="#flavors">Flavours</a> for which to use, and
-<a href="3mf-printing.html">Printing protein models</a> for a worked example
-and practical tips.
+Saves what you see as a <a href="https://3mf.io/specification/">3MF</a> file,
+the format 3D-printing software opens, and keeps your colours: as filament
+assignments for a multi-filament printer, or as full colour for a full-colour
+printer. <a href="#flavors">Flavours</a> says which to use;
+<a href="3mf-printing.html">Printing protein models</a> walks through an
+example and collects practical tips.
 </p>
 
 <h4>save</h4>
@@ -61,59 +61,62 @@ and practical tips.
 </blockquote>
 
 <p>
-The scene is written as displayed: whatever is shown in the graphics window is
-what gets exported, with hidden atoms, clipped surfaces and masked triangles
-left out. Instanced geometry such as atom spheres and bond cylinders is
-expanded into real triangles, and coincident vertices are merged so slicers
-see a connected mesh.
+What is shown is what gets saved: hidden atoms, parts cut away by a clipping
+plane and anything else not drawn are left out. The model is placed on the
+build plate, ready for the slicer.
 </p>
 
 <ul>
-<li><b>models</b> &ndash; which models to export; the default is everything
-displayed.</li>
+<li><b>models</b> &ndash; which models to save; by default everything
+shown.</li>
 
-<li><b>size</b> &ndash; scale so the longest edge of the model measures this
-many millimetres. This is usually what you want: molecules in &#8491;ngstroms
-are not printable sizes.</li>
+<li><b>size</b> &ndash; the length of the model's longest side, in
+millimetres. Usually what you want, since a molecule measured in
+&#8491;ngstroms is far too small to print.</li>
 
-<li><b>scale</b> &ndash; millimetres per &#8491;ngstrom, default 1.0. Ignored
-if <b>size</b> is given.</li>
+<li><b>scale</b> &ndash; millimetres per &#8491;ngstrom instead (default 1).
+Ignored when <b>size</b> is given.</li>
 
-<li><b>colors</b> &ndash; whether to carry the scene's colours into the file
-(default <b>true</b>). With <b>false</b> only geometry is written.</li>
+<li><b>colors</b> &ndash; keep the colours (default <b>true</b>), or save
+the shape only with <b>false</b>.</li>
 
-<li><b>maxColors</b> &ndash; merge down to at most this many colours, for a
-printer with a limited number of filaments. By default nothing is merged. Has
-no effect with <b>flavor fullcolor</b>, which has no such limit. See
-<a href="#palette">3mf palette</a> to choose the number.</li>
+<li><b>maxColors</b> &ndash; merge similar colours until at most this many
+are left, typically the number of filaments your printer has. By default
+nothing is merged, up to the 15 colours a slicer can take. Has no effect with
+<b>flavor fullcolor</b>. <a href="#palette">3mf palette</a> helps choose the
+number.</li>
 
-<li><b>flavor</b> &ndash; what kind of printer the file is for; see
-<a href="#flavors">Flavours</a> below.</li>
+<li><b>flavor</b> &ndash; which slicer or kind of printer the file is for; see
+<a href="#flavors">Flavours</a>.</li>
 
-<li><b>paint</b> &ndash; with a filament flavour, paint extruders onto one
-mesh (default) or, with <b>false</b>, split the mesh into named parts
-instead. Painting keeps the mesh whole; splitting leaves open edges between
-the parts but gives each a name in the slicer's part list.</li>
+<li><b>paint</b> &ndash; with a filament flavour, paint the colours onto one
+model (default), or with <b>false</b> split it into one part per colour; see
+<a href="#painting">Painting rather than splitting</a>.</li>
 
-<li><b>parts</b> &ndash; with a filament flavour, write one part per
-<b>chain</b> or per <b>model</b>, all in one object and in place, with the
-colours still painted inside each part. By default the scene is one piece.
-See <a href="#parts">One part per chain</a>.</li>
+<li><b>parts</b> &ndash; with a filament flavour, one part per <b>chain</b> or
+per <b>model</b>, kept together in place and still in colour. By default the
+scene is one piece. See <a href="#parts">One part per chain</a>.</li>
 
-<li><b>smoothness</b> &ndash; the deepest flat facet allowed in the print,
-in millimetres (default 0.05). Where ChimeraX's screen tessellation would be
-coarser than that at the chosen size, the export is made finer; <b>off</b>
-exports exactly what is drawn. See <a href="#smoothness">Smoothness</a>.</li>
+<li><b>smoothness</b> &ndash; how deep the flat sides of round shapes may be
+in the print, in millimetres (default 0.05). Where they would be deeper, the
+model is saved rounder; <b>off</b> saves exactly what is drawn. See
+<a href="#smoothness">Smoothness</a>.</li>
 
-<li><b>check</b> &ndash; whether to report printability problems (default
-<b>true</b>).</li>
+<li><b>check</b> &ndash; report what the printer will make of the model
+(default <b>true</b>); see <a href="#printability">Printability report</a>.</li>
 </ul>
 
 <p>
-The model is placed with its bounding box starting at the origin and its
-lowest point at z = 0. Coordinates are never negative, because a slicer
-reading a 3MF without its own placement data takes them literally and anything
-at negative x or y is off the build plate.
+The model always sits at positive coordinates, its lowest point at the
+build plate. A slicer that finds no placement in a file takes the coordinates
+literally, and anything at negative x or y would be off the plate.
+</p>
+
+<p>
+Saving takes a moment for big models: sticks, balls and spheres of a large
+structure are millions of triangles, and haemoglobin as sticks takes about
+half a minute. ChimeraX doesn't respond until the file is written; the status
+line at the bottom of the window shows what it is working on.
 </p>
 
 <a name="palette"></a>
@@ -131,10 +134,11 @@ at negative x or y is off the build plate.
 </blockquote>
 
 <p>
-Reports the colours an export would produce, without writing anything.
-With no options it also shows what merging to each number of colours would cost, as
-colour swatches with the mean perceptual error (&Delta;E) in plain words, so
-the number of colours can be chosen before exporting:
+Shows the colours a save would produce, without saving anything. On its own,
+it lists what merging into fewer colours would look like and what each choice
+costs in printing time, so you can pick the number first. &Delta;E measures
+how much the colours change, 0 meaning not at all; the words next to it say
+what that looks like:
 </p>
 
 <pre>
@@ -148,90 +152,70 @@ about 3h 57m spent changing tools (774 changes on a 5-tool printer)
 </pre>
 
 <p>
-With <b>maxColors</b> <i>N</i> it shows that exact palette instead, with the
-area share, the number of layers each colour appears in, and the tool changes it
-causes.
+With <b>maxColors</b> <i>N</i> it shows that palette in detail: how much of
+the model each colour covers, how many layers it appears in, and the filament
+changes it causes. At the given size it also says whether saving will
+<a href="#smoothness">smooth</a> the model, and how many more triangles that
+takes.
 </p>
 
 <p>
-It also says, at the size given, whether saving will
-<a href="#smoothness">smooth</a> the model and what that costs in triangles.
+Similar colours are merged the way the eye judges them (in CIELAB colour
+space, not RGB), and large areas count for more than small ones, so a big
+surface is not merged away for the sake of a few ligand triangles. Each
+merged colour is one that actually occurs in the scene, not an average.
 </p>
 
 <a name="printcost"></a>
 <h4>Print cost</h4>
 
 <p>
-A multi-material print spends most of its time changing tools rather than
-extruding, and each change purges filament into a wipe tower. What decides the
-cost of a colour is therefore not its area but how many layers it appears in,
-since it forces a tool change on each one.
-</p>
-
-<p>
-So a colour covering a fraction of a percent of the model can still drive a
-large share of the print time, and the palette says so:
+A multi-colour print spends much of its time changing filament, and each
+change wastes some filament on cleaning. What makes a colour expensive is
+therefore not how much of the model it covers but how many layers it appears
+in, because each of those layers needs a filament change. A colour on less
+than one percent of the model can still cost a large share of the printing
+time, and the palette points that out:
 </p>
 
 <pre>
-Colour 5 (1a3n_D SES surface red) is 0.4% of the model but drives about 6% of
-the tool changes, because it appears in 52 of 269 layers. Dropping it with
-'maxColors 4' would save roughly 52 tool changes.
+Color 5 (1a3n_D SES surface red) is 0.4% of the model but costs about 15m of
+tool changes, because it appears in 52 of 269 layers. Dropping it with
+maxColors 4 would get that time back.
 </pre>
 
-<p>
-The estimate is the number of extruders present in each layer, less one,
-summed over layers, times the measured cost of a tool change. Checked against
-PrusaSlicer on real exports the change count lands within about 1% and the
-time within 5%.
-</p>
-
-<p>
-The time reported is only what is spent <i>changing tools</i>, not the whole
-print: extrusion time depends on the print profile, which this bundle knows
-nothing about. On an Original Prusa XL at 0.20 mm a tool change measured 18.4
-seconds (<code>tools/calibrate_time.py</code> re-measures it). An MMU, which
-rewinds and purges rather than swapping a head, is considerably slower, so
-treat the figure as a way of comparing choices rather than a quote.
-</p>
-
-<p>
-Colours beyond the printer's tool count cost no extra time, because they all
-print with filament 1 &ndash; which is why the ladder stops rising past that
-point. Tell it what the printer has with <b>tools</b> <i>N</i> (default 5).
-</p>
-
-<p>
-Because the layer count depends on how tall the print is, <b>size</b> and
-<b>scale</b> mean the same here as in <b>save</b>, and <b>layerHeight</b>
-(default 0.2 mm) should match the print profile you intend to use.
-</p>
-
-<p>
-Colours are clustered in CIELAB rather than RGB, weighted by triangle area, so
-merging follows what the eye calls similar and a large surface is not merged
-away in favour of a few tiny ligand triangles. Each merged colour is one that
-actually appears in the scene rather than a cluster average.
-</p>
+<ul>
+<li>The time shown is only the time spent <i>changing filament</i>, not the
+whole print, which depends on your print settings.</li>
+<li>A filament change was measured at 18.4 seconds on an Original Prusa XL
+at 0.20 mm layers. Single-nozzle changers such as an MMU are much slower, so
+use the figures to compare choices, not as a quote.</li>
+<li>Checked against PrusaSlicer on real files, the number of changes is
+within about 1% and the time within 5%.</li>
+<li>Colours beyond the number of filaments your printer has cost no extra
+time, because they all print with filament 1. Tell the palette how many your
+printer has with <b>tools</b> <i>N</i> (default 5).</li>
+<li>The number of layers depends on how tall the print is, so <b>size</b> and
+<b>scale</b> mean the same as for <b>save</b>, and <b>layerHeight</b>
+(default 0.2 mm) should match your print settings.</li>
+</ul>
 
 <a name="smoothness"></a>
-<h4>Smoothness at print scale</h4>
+<h4>Smoothness at print size</h4>
 
 <p>
-ChimeraX draws for the screen. A pseudobond is a 10-sided cylinder, a bond or
-atom a few dozen triangles, a ribbon tube a dozen sides around. At screen size
-nobody sees the flats, but scaled to a print they become features: a 0.6
-&#8491; support at 200 mm is a 3.5 mm-radius prism whose flats sit 0.17 mm
-inside the true circle &ndash; almost a whole 0.2 mm layer, and plainly
-visible.
+ChimeraX draws for the screen: a support is a rod with 10 flat sides, a bond
+or atom a few dozen triangles, a ribbon about a dozen sides around. On screen
+nobody notices; printed large, the flat sides show. A 0.6 &#8491; support
+printed at 200 mm has flat sides 0.17 mm inside a true circle &ndash; almost a
+whole 0.2 mm layer.
 </p>
 
 <p>
-Each export therefore measures how deep the flat facets are at the chosen
-size. Where they exceed <b>smoothness</b> (0.05 mm by default, well under a
-layer), it raises the number of sides and triangles for just those kinds of
-geometry, exports, and then restores the previous settings, so the display is
-left as it was. The log says so before the file is written:
+So every save checks how deep the flat sides would be at your print size.
+Where they are deeper than <b>smoothness</b> (0.05 mm by default, well under
+one layer), the model is saved with more sides. Your view in ChimeraX stays
+as it was. The log says so before the file is written:
 </p>
 
 <pre>
@@ -243,183 +227,180 @@ left as it is; smoothness off exports exactly what is on screen.
 </pre>
 
 <p>
-and the export report states the result. <b>3mf palette</b> with the same
-<b>size</b> shows this in advance, without writing anything. A small print
-needs nothing: the same model at 100 mm is already within the target and is
-exported as drawn.
+<b>3mf palette</b> with the same <b>size</b> shows this in advance. A smaller
+print often needs nothing: the same model at 100 mm is saved as drawn.
 </p>
 
 <p>
-Atoms, bonds, pseudobonds (supports, struts) and ribbons are smoothed this
-way. Molecular and map surfaces keep the resolution they were computed at; if
-theirs is too coarse for the print the log says so and suggests how to
-recompute them finer (for example <b>surface gridSpacing 0.3</b>).
+Atoms, bonds, supports and ribbons are smoothed this way. Surfaces of
+molecules and maps are not: how fine they are is set when ChimeraX computes
+them. If one is too coarse for your print size, the log says so and suggests
+a finer one, for example <b>surface gridSpacing 0.3</b>.
 </p>
 
 <a name="flavors"></a>
 <h4>Flavours: which printer is this for?</h4>
 
 <p>
-A multi-filament printer and a full-colour printer need different files, and
-the two filament slicers store multi-part models in incompatible ways, so no
-single file works everywhere.
+Multi-filament printers and full-colour printers need different files, and
+the two families of filament slicers store colours in different ways, so one
+file cannot suit them all.
 </p>
 
 <table border="1" cellpadding="4" cellspacing="0">
-<tr><th>flavor</th><th>Colour written as</th><th>For</th></tr>
+<tr><th>flavor</th><th>For</th><th>Colours</th></tr>
 <tr><td><b>prusa</b> (default)</td>
-    <td>per-triangle extruder painting,
-        <code>slic3rpe:mmu_segmentation</code>; at most 15 colours</td>
-    <td>PrusaSlicer, multi-filament printers</td></tr>
+    <td>PrusaSlicer</td>
+    <td>painted, each colour assigned to a filament; up to 15</td></tr>
 <tr><td><b>bambu</b></td>
-    <td>per-triangle extruder painting, <code>paint_color</code>;
-        at most 15 colours</td>
-    <td>Bambu Studio, OrcaSlicer</td></tr>
+    <td>Bambu Studio, OrcaSlicer</td>
+    <td>painted, each colour assigned to a filament; up to 15</td></tr>
 <tr><td><b>fullcolor</b></td>
-    <td>a colour at every vertex, interpolated across each triangle
-        (Materials-extension <code>colorgroup</code>); no colour limit</td>
     <td>full-colour printers &ndash; inkjet, binder jet, PolyJet &ndash; and
-        3MF viewers</td></tr>
+        3MF viewers</td>
+    <td>every shade kept, blended smoothly across the surface; no limit</td></tr>
 </table>
 
 <p>
-<b>fullcolor</b> is the one to use for continuous colouring such as
-<a href="https://www.cgl.ucsf.edu/chimerax/docs/user/commands/mlp.html"><b>mlp</b></a> or colouring by B-factor: it writes the
-scene's colours unchanged, with no clustering and no extruder assignment.
-<b>generic</b> is accepted as an older name for it.
+<b>fullcolor</b> suits gradients such as
+<a href="https://www.cgl.ucsf.edu/chimerax/docs/user/commands/mlp.html"><b>mlp</b></a>
+hydrophobicity or colouring by B-factor: it keeps the colours exactly as they
+are. (<b>generic</b> is an older name for it.)
 </p>
 
 <p>
-Multi-filament printers work the other way round: a filament is a physical
-thing, so the colours must be reduced to as many as the machine has tools.
-That is what <b>maxColors</b> and the
-<a href="#palette">palette</a> preview are for.
-</p>
-
-<p>
-Each colour is written as an extruder already assigned to those triangles, so
-a multi-tool printer needs no manual assignment at all.
+On a multi-filament printer every colour is a real filament, so there can be
+no more colours than the printer holds. <b>maxColors</b> and the
+<a href="#palette">palette</a> preview are there for that. Each colour
+arrives already assigned to a filament, so there is nothing to assign by
+hand in the slicer.
 </p>
 
 <a name="painting"></a>
 <h4>Painting rather than splitting</h4>
 
 <p>
-Colours are painted onto the triangles of a single mesh, which is what a
-slicer's own multi-material paint tool produces. The mesh keeps its topology,
-so there is nothing for the slicer to repair.
+The colours are painted onto one model, just as a slicer's own paint tool
+does it. The model stays in one piece, so the slicer has nothing to repair.
 </p>
 
 <p>
-The alternative is to split the mesh into one part per colour. That also
-works, and gives each part a readable name in the slicer's part list, but
-every patch is then edged with open boundaries and the slicer flags a repair
-warning on each one. Use <b>paint false</b> to choose that layout. It is also
-used automatically above 15 colours, which is the most a slicer can paint; the
-log says so when that happens.
+With <b>paint false</b> the model is instead split into one part per colour.
+That works too, and each part gets a name in the slicer's list, but every
+part has open edges where it met its neighbours, and the slicer warns about
+each of them.
 </p>
 
 <p>
-Slicers do not always fill a painted colour all the way through. The Original
-Prusa XL profiles set a maximum width of 5 mm for a painted region, so each
-colour becomes a shell around a neighbouring colour &ndash; invisible from
-outside, but not if the model is cut. See
-<a href="3mf-printing.html#slicer">slicer settings</a> for this and for beam
-interlocking, which also acts on painted boundaries.
+A slicer can paint at most 15 colours. A scene with more, such as a rainbow
+or a Coulombic surface, has its similar colours merged into 15, and the log
+says so. Most printers hold fewer filaments than that: set <b>maxColors</b>
+to the number yours has, since colours beyond it all print with filament 1.
+</p>
+
+<p>
+Slicers don't always fill a painted colour all the way through. The Original
+Prusa XL profiles, for example, paint each colour only 5 mm deep, around a
+core of a neighbouring colour: invisible from outside, but not if the model is
+cut open. See <a href="3mf-printing.html#slicer">slicer settings</a> for this
+and for beam interlocking, which holds the colours together.
 </p>
 
 <a name="parts"></a>
 <h4>One part per chain</h4>
 
 <p>
-A complex of several chains, such as an AlphaFold prediction of two
-interacting proteins, normally arrives in the slicer as one piece. With
-<b>parts chain</b> each chain becomes a part of its own, named
-<i>chain A</i>, <i>chain B</i> and so on, so it can be selected, hidden or
-given its own settings. <b>parts model</b> does the same per top-level model
-(#1, #2, &hellip;, submodels included), for structures opened side by side.
-Chains are counted per structure, so the models of an ensemble (#1.1, #1.2,
-&hellip;) each keep their own chain A.
+A complex, such as an AlphaFold prediction of two interacting proteins,
+normally arrives in the slicer as one piece. With <b>parts chain</b> each
+chain becomes a part of its own, named <i>chain A</i>, <i>chain B</i> and so
+on, which you can select, hide or set up separately. <b>parts model</b> does
+the same per model (#1, #2, &hellip;, with their submodels), for structures
+opened side by side. Chains are counted per structure, so the models of an
+ensemble (#1.1, #1.2, &hellip;) each keep their own chain A.
 </p>
 
 <blockquote>
 <b>save</b> complex.3mf <b>parts</b> chain <b>flavor</b> bambu
 </blockquote>
 
+<ul>
+<li><b>The chains stay in place.</b> The parts belong to one object. Separate
+objects would not stay put: every slicer drops each object onto the bed, and
+Bambu Studio and OrcaSlicer also rearrange them.</li>
+<li><b>The colours stay.</b> Each part keeps its painted colours, such as a
+highlighted binding site.</li>
+<li><b>Use the right flavour.</b> PrusaSlicer needs <b>flavor prusa</b>,
+Bambu Studio and OrcaSlicer <b>flavor bambu</b>. With the wrong one, Bambu
+Studio and OrcaSlicer show a prusa file as one part without colours, and
+PrusaSlicer splits a bambu file into separate objects.</li>
+</ul>
+
 <p>
-The parts belong to one object, so the chains stay where they are relative to
-each other. Separate objects would not: every slicer puts each object on the
-bed, which lowers a chain that floats above it, and Bambu Studio and
-OrcaSlicer also rearrange them. The colours are painted inside each part as
-usual, so a chain keeps a highlighted binding site or ligand. PrusaSlicer
-needs <b>flavor prusa</b> and Bambu Studio or OrcaSlicer <b>flavor bambu</b>.
-The wrong flavour does not work: Bambu Studio and OrcaSlicer open a prusa
-file as one part without its painting, and PrusaSlicer opens a bambu file as
-separate objects, each dropped onto the bed.
+How the scene is divided: a molecular surface follows the atoms underneath
+it, a cartoon follows its residues, and each sphere, stick or support goes,
+whole, to the chain of the nearest atom shown &ndash; so a bond or support
+between two chains belongs to one of them. Anything not made of atoms, such
+as a map surface, goes to its model.
 </p>
 
 <p>
-Each triangle of a molecular surface goes to the chain of the atom it
-surrounds, so surfaces are split exactly, also a surface that encloses several
-chains. A cartoon is divided by the residues it was drawn for. Spheres, sticks
-and supports each go, whole, to the chain of the nearest atom shown; a bond or
-support between two chains therefore belongs to one of them. Anything not
-built from atoms, such as a map surface, goes to its model.
+A surface that covers several chains, as <b>surface</b> with <b>enclose</b>
+makes it, is saved as one part, named after its chains
+(<i>surface of chains A, B</i>): split along the chains, it would have holes.
+Everything else in the scene is still split by chain. For a separate surface
+per chain, run these before saving:
 </p>
 
+<blockquote>
+<b>surface close</b><br>
+<b>surface</b>
+</blockquote>
+
 <p>
-Chains in contact overlap where they meet, and so do their parts. Slicers
-print the overlap once, as they do for the parts made by <b>paint false</b>.
-To print the chains as separate pieces, split them in the slicer, but note
-that splitting there drops the painting: give each piece its filament
-afterwards, or export each chain on its own.
+Where chains touch, their parts overlap; the slicer prints the overlap once.
+To print the chains as separate pieces, split the object in the slicer. That
+drops the colours, so give each piece its filament afterwards, or save each
+chain on its own.
 </p>
 
 <a name="printability"></a>
 <h4>Printability report</h4>
 
 <p>
-Unless <b>check false</b> is given, each export reports what a slicer will
-make of the geometry. Nothing is modified; the report only describes.
+Unless you give <b>check false</b>, every save reports what the printer will
+make of the model. The report only describes; nothing is changed.
 </p>
 
 <p>
-ChimeraX geometry is almost never stitched together: a ribbon is a separate
-surface per helix, strand and coil, atoms are separate spheres, and bond
-cylinders are open-ended tubes. These abut or overlap rather than sharing
-vertices, so counting topologically separate surfaces says nothing about what
-will print. The report is built around what actually decides the outcome.
+ChimeraX builds a scene from many separate shapes &ndash; each helix, strand
+and loop of a ribbon, every atom sphere, every bond &ndash; that touch or
+overlap rather than forming one connected surface. So the report counts what
+matters for printing, not how the shapes are built:
 </p>
 
 <ul>
-<li><b>Printed bodies</b> &ndash; surfaces that come within roughly an
-extrusion width fuse in the print, so they count as one body no matter how the
-mesh is built. Six hundred overlapping atom spheres are one object.</li>
-<li><b>Interior cavities</b> &ndash; a closed surface wound inside-out bounds
-a void, not a solid, as in a density map with internal voids. Slicers fill
-what lies inside an odd number of surfaces, so a cavity stays hollow and costs
-no filament.</li>
-<li><b>Genuinely loose pieces</b> &ndash; only geometry touching nothing else,
-such as a water or ion in space, is reported as printing separately.</li>
-<li><b>Open surfaces</b> &ndash; stated as a fact with its cause, usually a
-surface cut open by a clipping plane; slicers close them when slicing. Bonds
-are closed on export: ChimeraX draws their cylinders without end caps, and
-every round, flat opening like that is capped in the file.</li>
-<li><b>Thin features and extreme sizes</b> &ndash; pieces below what a 0.4 mm
-nozzle can hold, or a model larger than most build plates.</li>
+<li><b>Printed pieces</b> &ndash; shapes closer than about one nozzle width
+fuse in the print and count as one piece. Six hundred overlapping atom
+spheres are one object.</li>
+<li><b>Hollow spaces</b> &ndash; empty space sealed inside the model, such as
+a cavity in a protein or a density map. The slicer leaves it hollow.</li>
+<li><b>Loose pieces</b> &ndash; only what touches nothing else, such as a
+water molecule or ion floating free, is reported as printing separately.</li>
+<li><b>Open surfaces</b> &ndash; with their cause, usually a surface cut open
+by a clipping plane; slicers close them when slicing. The open ends ChimeraX
+leaves on bond rods are closed when saving.</li>
+<li><b>Too thin or too big</b> &ndash; parts thinner than a 0.4 mm nozzle can
+print, or a model larger than most build plates.</li>
 </ul>
 
 <p>
-To prepare a structure for printing &ndash; struts between disjoint pieces,
-thickened ribbons, solvent removal &ndash; use the
+To make a structure printable &ndash; struts between loose parts, thicker
+ribbons, solvent removed &ndash; use the
 <a href="https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxnihpresets">NIH 3D print
-presets</a> bundle. This bundle only measures and reports.
-</p>
-
-<p>
-After applying a preset, look over the supports it adds before exporting:
-<a href="3mf-printing.html#supports">Checking the supports</a> shows how to
-find and remove one that is badly placed for printing.
+presets</a>. Save3MF saves and checks; it doesn't change your model. After a
+preset, look over the supports it added:
+<a href="3mf-printing.html#supports">Check the supports</a> shows how to find
+and remove one that sits badly.
 </p>
 
 <a name="related"></a>
@@ -427,11 +408,10 @@ find and remove one that is badly placed for printing.
 
 <p>
 <a href="https://github.com/erikeppinger/support-optimizer">Support
-Optimizer</a>, in the browser or as a desktop app, takes the file saved here and
-prepares it for the printer: it seals interior cavities so support material
-cannot be trapped inside them, searches for an orientation with fewer
-overhangs, and previews the support paths. The cavities reported above are
-precisely the ones it can seal.
+Optimizer</a>, in the browser or as a desktop app, takes the file saved here
+and gets it ready for the printer: it fills the hollow spaces reported above,
+so support material cannot get trapped inside, finds an orientation with
+fewer overhangs, and previews the supports.
 </p>
 
 <hr>
