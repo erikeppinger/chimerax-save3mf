@@ -164,9 +164,12 @@ Large prints are smoothed automatically – 1ubq at 100 mm needs nothing, at
 
 Drag the 3MF file in; the colours are kept.
 
-- **Surface models only:** *Find cavities*, then *Fill selected cavities*.
-  Otherwise support material gets trapped inside where you can never remove
-  it. Skip this for ribbon and strut models.
+- **Surface models only:** look at the report Save3MF writes in the log. If
+  it lists *interior cavities*, use *Find cavities*, then *Fill selected
+  cavities*. Otherwise support material gets trapped inside where you can
+  never remove it. If it lists none, skip this. The NIH surface presets
+  reduce cavities but don't remove them all: CRM1 (3gb8) still has 10.
+  Ribbon and strut models never need it.
 - Set the overhang angle your printer manages (about 45° for most FDM
   printers). For models above about 20,000 triangles, enable *Use low-res
   proxy*. Then *Optimize orientation*.
@@ -289,8 +292,8 @@ In the Save dialog this is the *Parts* option.
 ### Surface models
 
 - The easiest kind of model to print on an FDM printer.
-- Fill hollow spaces inside first (Support Optimizer), or support material
-  gets trapped.
+- Fill hollow spaces inside first (Support Optimizer) if the log reports
+  any, or support material gets trapped.
 - A smaller probe radius (0.5–1.4 Å) shows more detail; a finer grid gives a
   smoother surface but a bigger file. Very large structures may need to be
   split into several surfaces.

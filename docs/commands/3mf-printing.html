@@ -151,9 +151,12 @@ the bottom of the window shows what it is working on.</p>
 <h3>7. Orientation and cavities in Support Optimizer (optional)</h3>
 <p>Drag the 3MF file in; the colours are kept.</p>
 <ul>
-<li><strong>Surface models only:</strong> <em>Find cavities</em>, then <em>Fill selected cavities</em>.
-  Otherwise support material gets trapped inside where you can never remove
-  it. Skip this for ribbon and strut models.</li>
+<li><strong>Surface models only:</strong> look at the report Save3MF writes in the log. If
+  it lists <em>interior cavities</em>, use <em>Find cavities</em>, then <em>Fill selected
+  cavities</em>. Otherwise support material gets trapped inside where you can
+  never remove it. If it lists none, skip this. The NIH surface presets
+  reduce cavities but don't remove them all: CRM1 (3gb8) still has 10.
+  Ribbon and strut models never need it.</li>
 <li>Set the overhang angle your printer manages (about 45° for most FDM
   printers). For models above about 20,000 triangles, enable <em>Use low-res
   proxy</em>. Then <em>Optimize orientation</em>.</li>
@@ -260,8 +263,8 @@ its own, save one part per chain:
 <h3>Surface models</h3>
 <ul>
 <li>The easiest kind of model to print on an FDM printer.</li>
-<li>Fill hollow spaces inside first (Support Optimizer), or support material
-  gets trapped.</li>
+<li>Fill hollow spaces inside first (Support Optimizer) if the log reports
+  any, or support material gets trapped.</li>
 <li>A smaller probe radius (0.5–1.4 Å) shows more detail; a finer grid gives a
   smoother surface but a bigger file. Very large structures may need to be
   split into several surfaces.</li>

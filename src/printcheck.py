@@ -106,9 +106,11 @@ class PrintReport:
 
         if self.cavity_count:
             out.append(
-                "%d interior cavit%s (surfaces wound inside-out, such as voids "
-                "in a density map). Slicers leave these hollow; they cost no "
-                "filament."
+                "%d interior cavit%s (hollow spaces sealed inside, such as "
+                "voids in a protein or a density map). Slicers leave these "
+                "hollow, but support printed inside can never be removed: if "
+                "the model needs support, fill them first (Support Optimizer "
+                "does this)."
                 % (self.cavity_count, "y" if self.cavity_count == 1 else "ies"))
 
         if self.open_shells:

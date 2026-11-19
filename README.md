@@ -448,8 +448,10 @@ and a density map with internal voids:
 
 ```
 One connected body; it will print as one object.
-3 interior cavities (surfaces wound inside-out, such as voids in a density
-map). Slicers leave these hollow; they cost no filament.
+3 interior cavities (hollow spaces sealed inside, such as voids in a protein
+or a density map). Slicers leave these hollow, but support printed inside can
+never be removed: if the model needs support, fill them first (Support
+Optimizer does this).
 ```
 
 Still worth watching: ChimeraX shows cartoon by default, so adding a surface
